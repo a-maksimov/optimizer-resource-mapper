@@ -12,6 +12,8 @@ df_sales, df_production, df_stock, df_movement = data_loader(configid, datasetid
 mapped_production = pd.DataFrame()
 mapped_stock = pd.DataFrame()
 mapped_movement = pd.DataFrame()
+mapped_sales = pd.DataFrame()
+
 
 # TODO: First sort by period, then by total_value
 # TODO: Look for resources in the same period first
@@ -27,7 +29,7 @@ for sale in tqdm(df_sales.iterrows(), total=len(df_sales)):
 
     # if the product was found in the resources in any location
     if result:
-        df_production_updated, df_stock_updated, df_movement_updated, production, stock, movement = result
+        df_production_updated, df_stock_updated, df_movement_updated, production, stock, movement, sale = result
 
         # update resources dataframes
         df_production, df_stock, df_movement = df_production_updated, df_stock_updated, df_movement_updated
@@ -36,6 +38,8 @@ for sale in tqdm(df_sales.iterrows(), total=len(df_sales)):
         mapped_production = pd.concat([mapped_production, production], ignore_index=True)
         mapped_stock = pd.concat([mapped_stock, stock], ignore_index=True)
         mapped_movement = pd.concat([mapped_movement, movement], ignore_index=True)
+        mapped_sales = pd.concat([mapped_sales, sale], ignore_index=True)
+
 
 pass
 
