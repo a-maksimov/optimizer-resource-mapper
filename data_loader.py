@@ -44,12 +44,13 @@ def data_loader(configid, datasetid, runid, period):
 
     # Merge demand with sales
     df_merged = pd.merge(df_demand, df_results_sale, on=['location', 'product', 'client', 'period', 'region'])
-    # Filtering rows where solutionvalue is equal to quantity
+    # TODO: What to do with the rest of demands?
+    # Filtering rows where solutionvalue is equal to at least 20% of demand
     df_filtered = df_merged[df_merged['solutionvalue'] / df_merged['quantity'] >= 0.2].copy()
     # Calculate the product of solution_value and price
     df_filtered['total_value'] = df_filtered['solutionvalue'] * df_filtered['price']
     # Sort the DataFrame by total_value in descending order
-    df_sorted = df_filtered.sort_values(by='total_value', ascending=False)
+    df_sorted = df_filtered.sort_values(['period', 'total_value'], ascending=[False, False])
 
     # Results Production
     # Query the products from the results_production table

@@ -23,14 +23,17 @@ def map_resources(df_row, index, df_production, df_stock, df_movement):
 
         # find a product with the same location in production
         df_product_production = df_production[(df_production['product'] == df_row['product']) &
+                                              (df_production['period'] == df_row['period']) &
                                               (df_production['location'] == df_row['location'])].copy()
 
         # find a product with the same location in stock
         df_product_stock = df_stock[(df_stock['product'] == df_row['product']) &
+                                    (df_stock['period'] == df_row['period']) &
                                     (df_stock['location'] == df_row['location'])].copy()
 
         # check product movement
         df_product_movement = df_movement[(df_movement['product'] == df_row['product']) &
+                                          (df_movement['period'] == df_row['period']) &
                                           (df_movement['loc_to'] == df_row['location'])].copy()
 
         # base case
@@ -98,7 +101,7 @@ def map_resources(df_row, index, df_production, df_stock, df_movement):
             return recursive_results
 
         else:
-            return print(f'product {df_row["product"]} for order_id {index} was not found')
+            return print(f'\nProduct {df_row["product"]} for order_id {index} was not found')
 
     return find_resources(df_row, index, df_production, df_stock, df_movement,
                           mapped_production, mapped_stock, mapped_movement)
