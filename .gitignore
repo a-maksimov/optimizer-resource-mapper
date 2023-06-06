@@ -179,3 +179,4 @@ pyrightconfig.json
 launch.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+/legacy/
