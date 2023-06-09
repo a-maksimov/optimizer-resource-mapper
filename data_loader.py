@@ -12,8 +12,7 @@ def data_loader(configid, datasetid, runid, period):
     cursor.execute(f"""
         SELECT *
         FROM results_production
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS float) >= 1
-        ORDER BY CAST(period AS int)
+        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS int) >= 1
     """)
     results_production_rows = cursor.fetchall()
 
@@ -29,8 +28,7 @@ def data_loader(configid, datasetid, runid, period):
     cursor.execute(f"""
         SELECT *
         FROM results_movement
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS float) >= 1
-        ORDER BY CAST(period AS int)
+        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS int) >= 1
     """)
     results_movement_rows = cursor.fetchall()
 
@@ -46,8 +44,7 @@ def data_loader(configid, datasetid, runid, period):
     cursor.execute(f"""
         SELECT *
         FROM results_procurement
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS float) >= 1
-        ORDER BY CAST(period AS int)
+        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS int) >= 1
     """)
     df_results_procurement_rows = cursor.fetchall()
 
@@ -63,8 +60,7 @@ def data_loader(configid, datasetid, runid, period):
     cursor.execute(f"""
         SELECT *
         FROM results_stock
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS float) >= 0
-        ORDER BY CAST(period AS int)
+        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS int) >= 1
     """)
     results_stock_rows = cursor.fetchall()
 
@@ -80,8 +76,7 @@ def data_loader(configid, datasetid, runid, period):
     cursor.execute(f"""
         SELECT *
         FROM optimizer_storage
-        WHERE datasetid = {datasetid} AND period IN {period} AND CAST(initialstock AS float) >= 1
-        ORDER BY CAST(period as int)
+        WHERE datasetid = {datasetid} AND period IN {period} AND CAST(initialstock AS int) >= 1
     """)
     initial_stock_rows = cursor.fetchall()
 
@@ -103,13 +98,27 @@ def data_loader(configid, datasetid, runid, period):
 
     df_results_stock = df_results_stock[df_results_stock['value'] >= 1]
 
+    # Execute the query to retrieve demands
+    cursor.execute(f"""
+        SELECT *
+        FROM optimizer_demand
+        WHERE datasetid = {datasetid} AND period IN {period} AND CAST(quantity AS int) >= 1
+    """)
+    demand_rows = cursor.fetchall()
+
+    # Save the results in a DataFrame
+    df_demand = pd.DataFrame(demand_rows, columns=[desc[0] for desc in cursor.description])
+    df_demand[['quantity', 'price']] = df_demand[['quantity', 'price']].astype(float)
+    demand_cols = ['location', 'product', 'client', 'quantity', 'price', 'period']
+    df_demand = df_demand[demand_cols].copy()
+    df_demand = df_demand.drop_duplicates()
+
     # Results Sales
     # Execute the query to retrieve sales
     cursor.execute(f"""
         SELECT *
         FROM results_sale
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS float) >= 1
-        ORDER BY CAST(period AS int)
+        WHERE configid = {configid} AND runid = {runid} AND period IN {period} AND CAST(solutionvalue AS int) >= 1
     """)
     sale_rows = cursor.fetchall()
 
@@ -119,6 +128,27 @@ def data_loader(configid, datasetid, runid, period):
     results_sale_cols = ['location', 'product', 'client', 'solutionvalue', 'period']
     df_results_sale = df_results_sale[results_sale_cols].copy()
     df_results_sale = df_results_sale.drop_duplicates()
+
+    # Merge sales with demand
+    df_results_sale = pd.merge(df_results_sale, df_demand, on=['location', 'product', 'client', 'period'])
+
+    # Calculate the product of solution_value and price
+    df_results_sale['total_price'] = df_results_sale['solutionvalue'] * df_results_sale['price']
+
+    # Execute the query to retrieve BOMs
+    cursor.execute(f"""
+        SELECT *
+        FROM optimizer_bom
+        WHERE datasetid = {datasetid} AND period IN {period}
+    """)
+    bom_rows = cursor.fetchall()
+
+    # Save the results in a DataFrame
+    df_bom = pd.DataFrame(bom_rows, columns=[desc[0] for desc in cursor.description])
+    df_bom['input_output'] = df_bom['input_output'].astype(float)
+    df_bom_cols = ['bomnum', 'location', 'product', 'input_output', 'period']
+    df_bom = df_bom[df_bom_cols].copy()
+    df_bom = df_bom.drop_duplicates()
 
     # Close the cursor and the database connection
     conn.commit()
@@ -152,4 +182,4 @@ def data_loader(configid, datasetid, runid, period):
     df_results_movement = df_results_movement.assign(value=df_results_movement['solutionvalue'],
                                                      type='movement')
 
-    return df_results_sale, df_results_production, df_results_stock, df_results_movement, df_results_procurement
+    return df_results_sale, df_results_production, df_results_stock, df_results_movement, df_results_procurement, df_bom
