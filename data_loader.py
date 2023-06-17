@@ -170,7 +170,8 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
                                                     ascending=[True, True, False])
 
     # Create the 'period_spent' column
-    df_results_stock['period_spent'] = df_results_stock.groupby(['location', 'product'])['solutionvalue'].diff().shift(-1)
+    df_results_stock['period_spent'] = df_results_stock.groupby(['location', 'product'])['solutionvalue'].diff().shift(
+        -1)
 
     df_results_stock.loc[df_results_stock['period'] == 0, 'period_spent'] = \
         df_results_stock['initialstock'] - df_results_stock['solutionvalue']
@@ -251,23 +252,41 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     conn.close()
 
     # assign 'loc_from' and 'lock_to' for each table for consistency
-    df_results_stock = df_results_stock.assign(loc_from=df_results_stock['location'],
-                                               loc_to=df_results_stock['location'],
-                                               type='stock')
+    df_results_stock = df_results_stock.assign(
+        loc_from=df_results_stock['location'],
+        loc_to=df_results_stock['location'],
+        type='stock',
+    )
+    df_results_stock['keys'] = df_results_stock.apply(
+        lambda row: '.'.join(row[['location', 'period', 'product']].astype(str)), axis=1)
 
-    df_results_sale = df_results_sale.assign(loc_from=df_results_sale['location'],
-                                             loc_to=df_results_sale['location'],
-                                             type='sale')
+    df_results_sale = df_results_sale.assign(
+        loc_from=df_results_sale['location'],
+        loc_to=df_results_sale['location'],
+        type='sale'
+    )
+    df_results_sale['keys'] = df_results_sale.apply(
+        lambda row: '.'.join(row[['client', 'period', 'location', 'product']].astype(str)), axis=1)
 
-    df_results_production = df_results_production.assign(loc_from=df_results_production['location'],
-                                                         loc_to=df_results_production['location'],
-                                                         type='production')
+    df_results_production = df_results_production.assign(
+        loc_from=df_results_production['location'],
+        loc_to=df_results_production['location'],
+        type='production'
+    )
+    df_results_production['keys'] = df_results_production.apply(
+        lambda row: '.'.join(row[['location', 'period', 'product', 'bomnum']].astype(str)), axis=1)
 
-    df_results_procurement = df_results_procurement.assign(loc_from=df_results_procurement['location'],
-                                                           loc_to=df_results_procurement['location'],
-                                                           type='procurement')
+    df_results_procurement = df_results_procurement.assign(
+        loc_from=df_results_procurement['location'],
+        loc_to=df_results_procurement['location'],
+        type='procurement'
+    )
+    df_results_procurement['keys'] = df_results_procurement.apply(
+        lambda row: '.'.join(row[['product', 'supplier', 'period']].astype(str)), axis=1)
 
     df_results_movement = df_results_movement.assign(type='movement')
+    df_results_movement['keys'] = df_results_movement.apply(
+        lambda row: '.'.join(row[['loc_to', 'loc_from', 'product', 'period', 'transport_type']].astype(str)), axis=1)
 
     # sorting parameters
     if time_direction == 'backward' and priority == 'total_price':

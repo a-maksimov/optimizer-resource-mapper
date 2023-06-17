@@ -25,20 +25,20 @@ def map_resources(order, order_id, label,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
     # create empty dataframes for filling with mapped data
-    mapped_stock = pd.DataFrame({'order_id': [], 'label': [], 'location': [], 'product': [], 'period': [],
+    mapped_stock = pd.DataFrame({'order_id': [], 'label': [], 'keys': [], 'location': [], 'product': [], 'period': [],
                                  'solutionvalue': [], 'sv_leftover': [], 'initialstock': [], 'is_leftover': [],
                                  'extra_res': [], 'er_leftover': [], 'spent': [], 'stored': [], 'period_spent': [],
                                  'ps_leftover': [], 'loc_from': [], 'loc_to': [], 'residual': [], 'type': []})
 
-    mapped_production = pd.DataFrame({'order_id': [], 'label': [], 'location': [], 'product': [], 'period': [],
+    mapped_production = pd.DataFrame({'order_id': [], 'label': [], 'keys': [], 'location': [], 'product': [], 'period': [],
                                       'leadtime': [], 'solutionvalue': [], 'spent': [], 'loc_from': [], 'loc_to': [],
                                       'leftover': [], 'type': []})
 
-    mapped_movement = pd.DataFrame({'order_id': [], 'label': [], 'product': [], 'period': [], 'leadtime': [],
+    mapped_movement = pd.DataFrame({'order_id': [], 'label': [], 'keys': [], 'product': [], 'period': [], 'leadtime': [],
                                     'transport_type': [], 'solutionvalue': [], 'spent': [], 'loc_from': [],
                                     'loc_to': [], 'residual': [], 'leftover': [], 'type': []})
 
-    mapped_procurement = pd.DataFrame({'order_id': [], 'label': [], 'product': [], 'period': [], 'solutionvalue': [],
+    mapped_procurement = pd.DataFrame({'order_id': [], 'label': [], 'keys': [], 'product': [], 'period': [], 'solutionvalue': [],
                                        'spent': [], 'loc_from': [], 'loc_to': [], 'leftover': [], 'type': []})
 
     # initialize order residual and leftover counting
@@ -55,17 +55,30 @@ def map_resources(order, order_id, label,
         df_stock, df_production, df_movement, df_procurement = resources
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
+        # find the latest row with the desired 'keys' and update it's residual
+        # also update the residual in the input tables
         if order['type'] == 'stock':
-            mapped_stock.loc[len(mapped_stock) - 1, 'residual'] = order['residual']
+            last_index = mapped_stock.loc[mapped_stock['keys'] == order['keys']].index[-1]
+            mapped_stock.loc[last_index, 'residual'] = order['residual']
+
             df_stock.loc[order.name, 'residual'] = order['residual']
+
         elif order['type'] == 'production':
-            mapped_production.loc[len(mapped_production) - 1, 'residual'] = order['residual']
+            last_index = mapped_production.loc[mapped_production['keys'] == order['keys']].index[-1]
+            mapped_production.loc[last_index, 'residual'] = order['residual']
+
             df_production.loc[order.name, 'residual'] = order['residual']
+
         elif order['type'] == 'movement':
-            mapped_movement.loc[len(mapped_movement) - 1, 'residual'] = order['residual']
+            last_index = mapped_movement.loc[mapped_movement['keys'] == order['keys']].index[-1]
+            mapped_movement.loc[last_index, 'residual'] = order['residual']
+
             df_movement.loc[order.name, 'residual'] = order['residual']
+
         elif order['type'] == 'procurement':
-            mapped_procurement.loc[len(mapped_procurement) - 1, 'residual'] = order['residual']
+            last_index = mapped_procurement.loc[mapped_procurement['keys'] == order['keys']].index[-1]
+            mapped_procurement.loc[last_index, 'residual'] = order['residual']
+
             df_procurement.loc[order.name, 'residual'] = order['residual']
 
         # pack the resources

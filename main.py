@@ -57,7 +57,7 @@ def run_resource_mapper():
         order.name = order_id
 
         # label
-        label = '.'.join([order['client'], str(order['period']), order['location'], order['product']])
+        label = order['keys']
 
         # run recursive mapping and get updated resources
         result = map_resources(order, order_id, label,
