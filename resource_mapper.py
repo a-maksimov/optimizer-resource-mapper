@@ -1,45 +1,265 @@
 import pandas as pd
+import numpy as np
 from decimal import Decimal
 
 
-def map_resources(order, index, label, df_production, df_stock, df_movement, df_procurement, df_bom, map_bom=True):
+# TODO: take into account periods, procurement, costs, leftovers, parametrize, output the order with residual
+def map_resources(order, order_id, label,
+                  df_stock, df_production, df_movement, df_procurement, map_priority,
+                  df_bom, map_bom, threshold=Decimal('0.1')):
     """
     Recursively maps the resources in df_production, df_stock and df_movement with index of sale in order
     :param order: pd.Series, sale specification
-    :param index: index of sale
+    :param order_id: index of sale
     :param label: label of sale
     :param df_production: pd.DataFrame, data related to production
     :param df_stock: pd.Dataframe, data related to storage
     :param df_movement: pd.Dataframe, data related to transportation
     :param df_procurement: pd.Dataframe, data related to procurement
+    :param map_priority: dict, priority of resources
     :param df_bom: pd.Dataframe with BOMs data
     :param map_bom: bool, whether to map BOMs
+    :param threshold: Decimal, threshold for comparing real numbers
     :return: tuple of pd.Dataframes: updated and mapped resources
             (df_production, df_stock, df_movement, df_procurement,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
     # create empty dataframes for filling with mapped data
-    mapped_production = pd.DataFrame({'order_id': [], 'label': [], 'location': [], 'product': [], 'period': [],
-                                      'leadtime': [], 'value': [], 'spent': [], 'loc_from': [], 'loc_to': [],
-                                      'type': [], 'leftover': []})
-
     mapped_stock = pd.DataFrame({'order_id': [], 'label': [], 'location': [], 'product': [], 'period': [],
-                                 'solutionvalue': [], 'initialstock': [], 'value': [], 'spent': [], 'loc_from': [],
-                                 'loc_to': [], 'type': [], 'residual': [], 'leftover': []})
+                                 'solutionvalue': [], 'sv_leftover': [], 'initialstock': [], 'is_leftover': [],
+                                 'extra_res': [], 'er_leftover': [], 'spent': [], 'stored': [], 'period_spent': [],
+                                 'ps_leftover': [], 'loc_from': [], 'loc_to': [], 'residual': [], 'type': []})
+
+    mapped_production = pd.DataFrame({'order_id': [], 'label': [], 'location': [], 'product': [], 'period': [],
+                                      'leadtime': [], 'solutionvalue': [], 'spent': [], 'loc_from': [], 'loc_to': [],
+                                      'leftover': [], 'type': []})
 
     mapped_movement = pd.DataFrame({'order_id': [], 'label': [], 'product': [], 'period': [], 'leadtime': [],
-                                    'transport_type': [], 'value': [], 'spent': [], 'loc_from': [], 'loc_to': [],
-                                    'type': [], 'residual': [], 'leftover': []})
+                                    'transport_type': [], 'solutionvalue': [], 'spent': [], 'loc_from': [],
+                                    'loc_to': [], 'residual': [], 'leftover': [], 'type': []})
 
-    mapped_procurement = pd.DataFrame({'order_id': [], 'label': [], 'product': [], 'period': [], 'value': [],
-                                       'spent': [], 'loc_from': [], 'loc_to': [], 'type': [], 'leftover': []})
+    mapped_procurement = pd.DataFrame({'order_id': [], 'label': [], 'product': [], 'period': [], 'solutionvalue': [],
+                                       'spent': [], 'loc_from': [], 'loc_to': [], 'leftover': [], 'type': []})
 
     # initialize order residual and leftover counting
-    order['residual'] = order['value']
-    order['leftover'] = order['value']
+    order['residual'] = order['solutionvalue']
+    order['leftover'] = order['solutionvalue']
 
-    # to suppress taking the resource from itself
-    compare_cols = ['value', 'leftover']
+    # pack the resources
+    resources = df_stock, df_production, df_movement, df_procurement
+    mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+    def update_mapped_residual(order, resources, mapped_resources):
+
+        # unpack the resources
+        df_stock, df_production, df_movement, df_procurement = resources
+        mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
+
+        if order['type'] == 'stock':
+            mapped_stock.loc[len(mapped_stock) - 1, 'residual'] = order['residual']
+            df_stock.loc[order.name, 'residual'] = order['residual']
+        elif order['type'] == 'production':
+            mapped_production.loc[len(mapped_production) - 1, 'residual'] = order['residual']
+            df_production.loc[order.name, 'residual'] = order['residual']
+        elif order['type'] == 'movement':
+            mapped_movement.loc[len(mapped_movement) - 1, 'residual'] = order['residual']
+            df_movement.loc[order.name, 'residual'] = order['residual']
+        elif order['type'] == 'procurement':
+            mapped_procurement.loc[len(mapped_procurement) - 1, 'residual'] = order['residual']
+            df_procurement.loc[order.name, 'residual'] = order['residual']
+
+        # pack the resources
+        resources = df_stock, df_production, df_movement, df_procurement
+        mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+        return resources, mapped_resources
+
+    def map_stock(order, product_stock, resources, mapped_resources):
+
+        # map the product in stock
+        product_stock['order_id'] = order_id
+        product_stock['label'] = label
+
+        if order['type'] == product_stock['type']:
+            order['residual'] -= product_stock['sv_leftover']
+            if order['residual'] < threshold:
+                product_stock['stored'] = product_stock['sv_leftover'] + order['residual']
+                product_stock['sv_leftover'] = -order['residual']
+                order['residual'] = 0
+            else:
+                product_stock['stored'] = product_stock['sv_leftover']
+                product_stock['sv_leftover'] = 0
+        else:
+            order['residual'] -= product_stock['ps_leftover']
+            if order['residual'] < threshold:
+                product_stock['spent'] = product_stock['ps_leftover'] + order['residual']
+                product_stock['ps_leftover'] = -order['residual']
+                order['residual'] = 0
+            else:
+                product_stock['spent'] = product_stock['ps_leftover']
+                product_stock['ps_leftover'] = 0
+
+
+        # update residual
+        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+
+        # unpack the resources
+        df_stock, df_production, df_movement, df_procurement = resources
+        mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
+
+        if order['type'] == product_stock['type']:
+            spent = product_stock['stored']
+        else:
+            spent = product_stock['spent']
+
+        # map extra resource
+        if product_stock['er_leftover'] > threshold:
+            product_stock['residual'] = product_stock['er_leftover'] - spent
+            if product_stock['residual'] < threshold:
+                product_stock['residual'] = product_stock['er_leftover']
+                product_stock['er_leftover'] = 0
+            else:
+                product_stock['er_leftover'] = product_stock['residual']
+                product_stock['residual'] = spent
+        else:
+            # take into account initial stock
+            product_stock['residual'] = spent - product_stock['is_leftover']
+            if product_stock['residual'] < threshold:
+                product_stock['is_leftover'] -= spent
+                product_stock['residual'] = 0
+            else:
+                product_stock['is_leftover'] = 0
+
+        # append to a mapped dataframe
+        mapped_stock.loc[len(mapped_stock.index)] = product_stock
+
+        # update resource leftover for storage
+        df_stock.loc[product_stock.name, 'ps_leftover'] = product_stock['ps_leftover']
+        df_stock.loc[product_stock.name, 'sv_leftover'] = product_stock['sv_leftover']
+        df_stock.loc[product_stock.name, 'er_leftover'] = product_stock['er_leftover']
+
+        # pack the resources
+        resources = df_stock, df_production, df_movement, df_procurement
+        mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+        return product_stock, resources, mapped_resources
+
+    def map_production(order, product_production, resources, mapped_resources):
+
+        # map the product in production
+        product_production['order_id'] = order_id
+        product_production['label'] = label
+
+        # subtract production leftover from order
+        order['residual'] -= product_production['leftover']
+
+        # calculate the order residual and resource spent and leftover
+        if order['residual'] < threshold:
+            product_production['spent'] = product_production['leftover'] + order['residual']
+            product_production['leftover'] = -order['residual']
+            order['residual'] = 0
+        else:
+            product_production['spent'] = product_production['leftover']
+            product_production['leftover'] = 0
+
+        # update residual
+        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+
+        # unpack the resources
+        df_stock, df_production, df_movement, df_procurement = resources
+        mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
+
+        # append to a mapped dataframe
+        mapped_production.loc[len(mapped_production.index)] = product_production
+
+        # update production leftover
+        df_production.loc[product_production.name, 'leftover'] = product_production['leftover']
+
+        # pack the resources
+        resources = df_stock, df_production, df_movement, df_procurement
+        mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+        return product_production, resources, mapped_resources
+
+    def map_movement(order, product_movement, resources, mapped_resources):
+
+        # map the product in movement
+        product_movement['order_id'] = order_id
+        product_movement['label'] = label
+
+        # subtract movement value from order
+        order['residual'] -= product_movement['leftover']
+
+        # calculate the order residual and resource spent and leftover
+        if order['residual'] < threshold:
+            product_movement['spent'] = product_movement['leftover'] + order['residual']
+            product_movement['leftover'] = -order['residual']
+            order['residual'] = 0
+        else:
+            product_movement['spent'] = product_movement['leftover']
+            product_movement['leftover'] = 0
+
+        # update residual
+        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+
+        # unpack the resources
+        df_stock, df_production, df_movement, df_procurement = resources
+        mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
+
+        # update resource residual
+        product_movement['residual'] = product_movement['spent']
+
+        # append to a mapped dataframe
+        mapped_movement.loc[len(mapped_movement.index)] = product_movement
+
+        # update resource leftover
+        df_movement.loc[product_movement.name, 'leftover'] = product_movement['leftover']
+
+        # pack the resources
+        resources = df_stock, df_production, df_movement, df_procurement
+        mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+        return product_movement, resources, mapped_resources
+
+    def map_procurement(order, product_procurement, resources, mapped_resources):
+
+        # map the product in production
+        product_procurement['order_id'] = order_id
+        product_procurement['label'] = label
+
+        # subtract movement value from order
+        order['residual'] -= product_procurement['leftover']
+
+        # calculate the order residual and resource spent and leftover
+        if order['residual'] < threshold:
+            product_procurement['spent'] = product_procurement['leftover'] + order['residual']
+            product_procurement['leftover'] = -order['residual']
+            order['residual'] = 0
+        else:
+            product_procurement['spent'] = product_procurement['leftover']
+            product_procurement['leftover'] = 0
+
+        # update residual
+        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+
+        # unpack the resources
+        df_stock, df_production, df_movement, df_procurement = resources
+        mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
+
+        # update resource residual
+        product_procurement['residual'] = product_procurement['spent']
+
+        # append to a mapped dataframe
+        mapped_procurement.loc[len(mapped_procurement.index)] = product_procurement
+
+        # update resource leftover
+        df_procurement.loc[product_procurement.name, 'leftover'] = product_procurement['leftover']
+
+        # pack the resources
+        resources = df_stock, df_production, df_movement, df_procurement
+        mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+        return product_procurement, resources, mapped_resources
 
     def get_bom_orders(product_production, df_bom):
         # get the BOM
@@ -52,361 +272,259 @@ def map_resources(order, index, label, df_production, df_stock, df_movement, df_
         df_product_bom['order_id'] = product_production['order_id']
         df_product_bom['label'] = product_production['label']
         df_product_bom['loc_from'], df_product_bom['loc_to'] = df_product_bom['location'], df_product_bom['location']
-        df_product_bom['value'] = -df_product_bom['input_output'] * product_production['spent']
-        df_product_bom['residual'] = df_product_bom['value']
-        df_product_bom['leftover'] = df_product_bom['value']
-        df_product_bom['spent'] = df_product_bom['value']
+        df_product_bom['solutionvalue'] = -df_product_bom['input_output'] * product_production['spent']
+        df_product_bom['residual'] = df_product_bom['solutionvalue']
+        df_product_bom['leftover'] = Decimal('0')
+        df_product_bom['spent'] = df_product_bom['solutionvalue']
         df_product_bom['type'] = 'bom'
 
         return df_product_bom
 
-    def find_resources(order, index, label,
-                       df_production, df_stock, df_movement, df_procurement,
-                       mapped_production, mapped_stock, mapped_movement, mapped_procurement,
-                       df_bom, map_bom):
+    def find_resources(order, order_id, label, resources, mapped_resources, map_priority, df_bom, map_bom, threshold):
+
+        # unpack the resources
+        df_stock, df_production, df_movement, df_procurement = resources
+        mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
         # base case
-        if abs(order['residual']) < Decimal('0.1'):
+        if abs(order['residual']) < threshold:
             # convert order to dataframe
-            results = df_production, df_stock, df_movement, df_procurement, \
-                mapped_production, mapped_stock, mapped_movement, mapped_procurement
-            return results
+            result = df_stock, df_production, df_movement, df_procurement, \
+                mapped_stock, mapped_production, mapped_movement, mapped_procurement
+            return result
 
+        # recursive cases
         else:
-            # find a product at the same location and same period in production
-            df_product_production = df_production[
-                (df_production['product'] == order['product']) &
-                (df_production['period'] == order['period']) &
-                (df_production['loc_to'] == order['loc_from']) &
-                (abs(df_production['leftover']) > Decimal('0.1')) &
-                # suppress selection from self leftovers
-                (~df_production[compare_cols].eq(order[compare_cols]).all(axis=1) |
-                 (df_production['type'] != order['type']))
-                ].copy()
-
-            # recursive case 1
-            # check production in this location
-            if len(df_product_production) > 0:
-                # iterate over found productions
-                recursive_results = []
-                for i in range(len(df_product_production)):
-                    # break loop if there is no more residual
-                    if abs(order['residual']) < Decimal('0.1'):
-                        break
-                    # get production row from the found products
-                    product_production = df_product_production.iloc[i].copy()
-
-                    # set the name of the Series to the index-label of the row
-                    product_production.name = df_product_production.index[i]
-
-                    # map product in production
-                    product_production['order_id'] = index
-                    product_production['label'] = label
-
-                    # subtract production leftover from order
-                    if order['type'] == 'sale':
-                        order['residual'] -= product_production['leftover']
-                    else:
-                        order['residual'] = order['spent'] - product_production['leftover']
-
-                    # calculate the order residual and resource spent and leftover
-                    if order['residual'] < Decimal('0.1'):
-                        product_production['spent'] = product_production['leftover'] + order['residual']
-                        product_production['leftover'] = -order['residual']
-                        order['residual'] = 0
-                    else:
-                        product_production['spent'] = product_production['leftover']
-                        product_production['leftover'] = 0
-
-                    # update mapped residual
-                    if order['type'] == 'stock':
-                        mapped_stock.loc[len(mapped_stock) - 1, 'residual'] = order['residual']
-                        df_stock.loc[order.name, 'residual'] = order['residual']
-                    elif order['type'] == 'movement':
-                        mapped_movement.loc[len(mapped_movement) - 1, 'residual'] = order['residual']
-                        df_movement.loc[order.name, 'residual'] = order['residual']
-
-                    # append to a mapped dataframe
-                    mapped_production.loc[len(mapped_production.index)] = product_production
-
-                    # update production leftover
-                    df_production.loc[product_production.name, 'leftover'] = product_production['leftover']
-
-                    # map BOM
-                    if map_bom:
-                        # get BOM
-                        df_bomlist = get_bom_orders(product_production, df_bom)
-
-                        # if the product has inputs
-                        if len(df_bomlist) > 0:
-                            # map BOM
-                            bom_recursive_results = []
-                            for j in range(len(df_bomlist)):
-                                # get the BOM item from found BOM list
-                                product_bom_item = df_bomlist.iloc[j].copy()
-
-                                # set the name of the Series to the index-label of the row
-                                product_bom_item.name = df_bomlist.index[j]
-
-                                # capture the recursive results
-                                bom_recursive_results.append(
-                                    find_resources(
-                                        product_bom_item, index, label,
-                                        df_production, df_stock, df_movement, df_procurement,
-                                        mapped_production, mapped_stock, mapped_movement, mapped_procurement,
-                                        df_bom, map_bom
-                                    )
-                                )
-
-                            # capture the BOM recursive results
-                            bom_recursive_result = bom_recursive_results[-1]
-                            return bom_recursive_result
-
-                    # capture the recursive results
-                    recursive_results.append(
-                        find_resources(
-                            order, index, label,
-                            df_production, df_stock, df_movement, df_procurement,
-                            mapped_production, mapped_stock, mapped_movement, mapped_procurement,
-                            df_bom, map_bom
-                        )
-                    )
-
-                # process the list of recursive results
-                recursive_result = recursive_results[-1]
-                return recursive_result
+            # initialize list of branches
+            df_list = []
 
             # check stock
             df_product_stock = df_stock[
                 (df_stock['product'] == order['product']) &
-                (df_stock['period'] <= order['period']) &
-                # movement from current period - 1
-                (df_stock['period'] >= order['period'] - 1) &
+                # if the order is stock, check prev period, otherwise check current stock leftovers
+                (np.where(df_stock['type'] == order['type'],
+                          df_stock['period'] == order['period'] - 1,
+                          df_stock['period'] == order['period'])) &
                 (df_stock['loc_to'] == order['loc_from']) &
-                (abs(df_stock['leftover']) > Decimal('0.1')) &
+                # if the order is stock, check previous period solutionvalue leftover,
+                # otherwise check current period_spent leftover
+                (np.where(df_stock['type'] == order['type'],
+                          abs(df_stock['sv_leftover']) > threshold,
+                          abs(df_stock['ps_leftover']) > threshold)) &
                 # suppress selection from self leftovers
-                (~df_stock[compare_cols].eq(order[compare_cols]).all(axis=1) |
-                 (df_stock['type'] != order['type']))
+                (~df_stock.index.isin([order.name]) | (df_stock['type'] != order['type']))
                 ].copy()
-
-            # recursive case 2
-            # check stock in this location
             if len(df_product_stock) > 0:
-                # iterate over found stocks
-                recursive_results = []
-                for i in range(len(df_product_stock)):
-                    # break loop if there is no more residual
-                    if abs(order['residual']) < Decimal('0.1'):
-                        break
-                    # get the stock row from the found stocks
-                    product_stock = df_product_stock.iloc[i].copy()
+                df_list.append(df_product_stock)
 
-                    # set the name of the Series to the label of the row
-                    product_stock.name = df_product_stock.index[i]
-
-                    # map product in production
-                    product_stock['order_id'] = index
-                    product_stock['label'] = label
-
-                    # subtract production leftover from order
-                    if order['type'] == 'sale':
-                        order['residual'] -= product_stock['leftover']
-                    else:
-                        order['residual'] = order['spent'] - product_stock['leftover']
-
-                    # calculate the order residual and resource spent and leftover
-                    if order['residual'] < Decimal('0.1'):
-                        product_stock['spent'] = product_stock['leftover'] + order['residual']
-                        product_stock['leftover'] = -order['residual']
-                        order['residual'] = 0
-                    else:
-                        product_stock['spent'] = product_stock['leftover']
-                        product_stock['leftover'] = 0
-
-                    # update mapped residual
-                    if order['type'] == 'stock':
-                        mapped_stock.loc[len(mapped_stock) - 1, 'residual'] = order['residual']
-                        df_stock.loc[order.name, 'residual'] = order['residual']
-                    elif order['type'] == 'movement':
-                        mapped_movement.loc[len(mapped_movement) - 1, 'residual'] = order['residual']
-                        df_movement.loc[order.name, 'residual'] = order['residual']
-
-                    # if it's only initial stock, return on top level,
-                    # if it is mixed or solution stock, go down level
-                    if not product_stock['initialstock'] == product_stock['value']:
-                        order = product_stock
-
-                    # append to a mapped dataframe
-                    mapped_stock.loc[len(mapped_stock.index)] = product_stock
-
-                    # update resource leftover
-                    df_stock.loc[product_stock.name, 'leftover'] = product_stock['leftover']
-
-                    # capture the recursive results
-                    recursive_results.append(
-                        find_resources(
-                            order, index, label,
-                            df_production, df_stock, df_movement, df_procurement,
-                            mapped_production, mapped_stock, mapped_movement, mapped_procurement,
-                            df_bom, map_bom
-                        )
-                    )
-                # process the list of recursive results
-                recursive_result = recursive_results[-1]
-                return recursive_result
+            # find a product at the same location in production
+            df_product_production = df_production[
+                (df_production['product'] == order['product']) &
+                (df_production['period'] == order['period'] - df_production['leadtime']) &
+                (df_production['loc_to'] == order['loc_from']) &
+                (abs(df_production['leftover']) > threshold) &
+                # suppress selection from self
+                (~df_production.index.isin([order.name]) | (df_production['type'] != order['type']))
+                ].copy()
+            if len(df_product_production) > 0:
+                df_list.append(df_product_production)
 
             # check movement
             df_product_movement = df_movement[
                 (df_movement['product'] == order['product']) &
-                (df_movement['period'] <= order['period']) &
-                # movement from current period - 1
-                (df_movement['period'] >= order['period'] - 1) &
+                (df_movement['period'] == order['period'] - df_movement['leadtime']) &
                 (df_movement['loc_to'] == order['loc_from']) &
-                (abs(df_movement['leftover']) > Decimal('0.1')) &
+                (abs(df_movement['leftover']) > threshold) &
                 # suppress selection from self leftovers
-                (~df_movement[compare_cols].eq(order[compare_cols]).all(axis=1) |
-                 (df_movement['type'] != order['type']))
+                (~df_movement.index.isin([order.name]) | (df_movement['type'] != order['type']))
                 ].copy()
-
-            # recursive case 3
-            # check movement to this location
             if len(df_product_movement) > 0:
-                # iterate over found movements
-                recursive_results = []
-                for i in range(len(df_product_movement)):
-                    # break loop if there is no more residual
-                    if abs(order['residual']) < Decimal('0.1'):
-                        break
-                    # get the movement row from the found movements
-                    product_movement = df_product_movement.iloc[i].copy()
-
-                    # set the name of the Series to the label of the row
-                    product_movement.name = df_product_movement.index[i]
-
-                    # map movement
-                    product_movement['order_id'] = index
-                    product_movement['label'] = label
-
-                    # subtract movement value from order
-                    if order['type'] == 'sale':
-                        order['residual'] -= product_movement['leftover']
-                    else:
-                        order['residual'] = order['spent'] - product_movement['leftover']
-
-                    # calculate the order residual and resource spent and leftover
-                    if order['residual'] < Decimal('0.1'):
-                        product_movement['spent'] = product_movement['leftover'] + order['residual']
-                        product_movement['leftover'] = -order['residual']
-                        order['residual'] = 0
-                    else:
-                        product_movement['spent'] = product_movement['leftover']
-                        product_movement['leftover'] = 0
-
-                    # update mapped residual
-                    if order['type'] == 'stock':
-                        mapped_stock.loc[len(mapped_stock) - 1, 'residual'] = order['residual']
-                        df_stock.loc[order.name, 'residual'] = order['residual']
-                    elif order['type'] == 'movement':
-                        mapped_movement.loc[len(mapped_movement) - 1, 'residual'] = order['residual']
-                        df_movement.loc[order.name, 'residual'] = order['residual']
-
-                    # append to a mapped dataframe
-                    mapped_movement.loc[len(mapped_movement.index)] = product_movement
-
-                    # update resource leftover
-                    df_movement.loc[product_movement.name, 'leftover'] = product_movement['leftover']
-
-                    # capture the recursive results
-                    recursive_results.append(
-                        find_resources(
-                            product_movement, index, label,
-                            df_production, df_stock, df_movement, df_procurement,
-                            mapped_production, mapped_stock, mapped_movement, mapped_procurement,
-                            df_bom, map_bom
-                        )
-                    )
-
-                # process the list of recursive results
-                recursive_result = recursive_results[-1]
-                return recursive_result
+                df_list.append(df_product_movement)
 
             # find a product at the same location and same period in procurement
             df_product_procurement = df_procurement[
                 (df_procurement['product'] == order['product']) &
-                (df_procurement['period'] == order['period']) &
+                (df_procurement['period'] <= order['period']) &
                 (df_procurement['loc_to'] == order['loc_from']) &
-                (abs(df_procurement['leftover']) > Decimal('0.1')) &
+                (abs(df_procurement['leftover']) > threshold) &
                 # suppress selection from self leftovers
-                (~df_procurement[compare_cols].eq(order[compare_cols]).all(axis=1) |
-                 (df_procurement['type'] != order['type']))
+                (~df_procurement.index.isin([order.name]) | (df_procurement['type'] != order['type']))
                 ].copy()
+            if len(df_product_procurement):
+                df_list.append(df_product_procurement)
 
-            # recursive case 4
-            # check production in this location
-            if len(df_product_procurement) > 0:
-                # iterate over found productions
-                recursive_results = []
-                for i in range(len(df_product_procurement)):
-                    # break loop if there is no more residual
-                    if abs(order['residual']) < Decimal('0.1'):
-                        break
-                    # get the procurement row from the found procurement
-                    product_procurement = df_product_procurement.iloc[i].copy()
+            recursive_results = []
+            # iterate over sorted list of branches
+            df_list = sorted(df_list, key=lambda d: map_priority[d.iloc[0]['type']])
+            for df in df_list:
+                # break the loop if the order is fulfilled
+                if abs(order['residual']) < threshold:
+                    break
 
-                    # set the name of the Series to the index-label of the row
-                    product_procurement.name = df_product_procurement.index[i]
+                else:
+                    if df.iloc[0]['type'] == 'stock':
+                        # iterate over found stocks
+                        recursive_results_stock = []
+                        for i in range(len(df)):
+                            # break loop if there is no more residual
+                            if abs(order['residual']) < threshold:
+                                break
+                            # get the stock row from the found stocks
+                            product_stock = df.sort_values('period', ascending=False).iloc[i].copy()
 
-                    # map product in procurement
-                    product_procurement['order_id'] = index
-                    product_procurement['label'] = label
+                            # set the name of the Series to the label of the row
+                            product_stock.name = df.index[i]
 
-                    # subtract procurement leftover from order
-                    if order['type'] == 'sale':
-                        order['residual'] -= product_procurement['leftover']
+                            # pack the resources
+                            resources = df_stock, df_production, df_movement, df_procurement
+                            mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+                            # get mapped result
+                            product_stock, resources, mapped_resources = map_stock(
+                                order, product_stock,
+                                resources, mapped_resources
+                            )
+
+                            # capture the recursive results
+                            recursive_results_stock.append(
+                                find_resources(
+                                    product_stock, order_id, label,
+                                    resources, mapped_resources, map_priority,
+                                    df_bom, map_bom, threshold
+                                )
+                            )
+                        # get the recursive result from the stock branch
+                        recursive_results.append(recursive_results_stock[-1])
+
+                    elif df.iloc[0]['type'] == 'production':
+                        # iterate over found productions
+                        recursive_results_production = []
+                        for i in range(len(df)):
+                            # break loop if there is no more residual
+                            if abs(order['residual']) < threshold:
+                                break
+                            # get the stock row from the found stocks
+                            product_production = df.sort_values('period', ascending=False).iloc[i].copy()
+
+                            # set the name of the Series to the label of the row
+                            product_production.name = df.index[i]
+
+                            # pack the resources
+                            resources = df_stock, df_production, df_movement, df_procurement
+                            mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+                            # get mapped result
+                            product_production, resources, mapped_resources = map_production(
+                                order, product_production,
+                                resources, mapped_resources
+                            )
+                            # map BOM
+                            if map_bom:
+                                # get BOM
+                                df_bomlist = get_bom_orders(product_production, df_bom)
+                                # if the product has inputs
+                                if len(df_bomlist) > 0:
+                                    # map BOM
+                                    recursive_results_bom = []
+                                    for j in range(len(df_bomlist)):
+                                        # get the BOM item from found BOM list
+                                        product_bom_item = df_bomlist.iloc[j].copy()
+
+                                        # set the name of the Series to the index-label of the row
+                                        product_bom_item.name = df_bomlist.index[j]
+
+                                        # capture the recursive results
+                                        recursive_results_bom.append(
+                                            find_resources(
+                                                product_bom_item, order_id, label,
+                                                resources, mapped_resources, map_priority,
+                                                df_bom, map_bom, threshold
+                                            )
+                                        )
+                                    recursive_results_production.append(recursive_results_bom[-1])
+
+                            # capture the recursive results
+                            recursive_results_production.append(
+                                find_resources(
+                                    order, order_id, label,
+                                    resources, mapped_resources, map_priority,
+                                    df_bom, map_bom, threshold
+                                )
+                            )
+
+                        # get the recursive result from the production branch
+                        recursive_results.append(recursive_results_production[-1])
+
+                    elif df.iloc[0]['type'] == 'movement':
+                        # iterate over found movements
+                        recursive_results_movement = []
+                        for i in range(len(df)):
+                            # break loop if there is no more residual
+                            if abs(order['residual']) < threshold:
+                                break
+                            # get the stock row from the found stocks
+                            product_movement = df.sort_values('period', ascending=False).iloc[i].copy()
+
+                            # set the name of the Series to the label of the row
+                            product_movement.name = df.index[i]
+
+                            # pack the resources
+                            resources = df_stock, df_production, df_movement, df_procurement
+                            mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
+
+                            # get mapped result
+                            product_movement, resources, mapped_resources = map_movement(
+                                order, product_movement,
+                                resources, mapped_resources
+                            )
+
+                            # capture the recursive results
+                            recursive_results_movement.append(
+                                find_resources(
+                                    product_movement, order_id, label,
+                                    resources, mapped_resources, map_priority,
+                                    df_bom, map_bom, threshold
+                                )
+                            )
+                        # get the recursive result from the movement branch
+                        recursive_results.append(recursive_results_movement[-1])
+
                     else:
-                        order['residual'] = order['spent'] - product_procurement['leftover']
+                        # iterate over found procurements
+                        recursive_results_procurement = []
+                        for i in range(len(df)):
+                            # break loop if there is no more residual
+                            if abs(order['residual']) < threshold:
+                                break
+                            # get the stock row from the found stocks
+                            product_procurement = df.sort_values('period', ascending=False).iloc[i].copy()
 
-                    # calculate the order residual and resource spent and leftover
-                    if order['residual'] < Decimal('0.1'):
-                        product_procurement['spent'] = product_procurement['leftover'] + order['residual']
-                        product_procurement['leftover'] = -order['residual']
-                        order['residual'] = 0
-                    else:
-                        product_procurement['spent'] = product_procurement['leftover']
-                        product_procurement['leftover'] = 0
+                            # set the name of the Series to the label of the row
+                            product_procurement.name = df.index[i]
 
-                    # update mapped residual
-                    if order['type'] == 'stock':
-                        mapped_stock.loc[len(mapped_stock) - 1, 'residual'] = order['residual']
-                        df_stock.loc[order.name, 'residual'] = order['residual']
-                    elif order['type'] == 'movement':
-                        mapped_movement.loc[len(mapped_movement) - 1, 'residual'] = order['residual']
-                        df_movement.loc[order.name, 'residual'] = order['residual']
+                            # pack the resources
+                            resources = df_stock, df_production, df_movement, df_procurement
+                            mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
 
-                    # append to a mapped dataframe
-                    mapped_procurement.loc[len(mapped_procurement.index)] = product_procurement
+                            # get mapped result
+                            product_procurement, resources, mapped_resources = map_procurement(
+                                order, product_procurement,
+                                resources, mapped_resources
+                            )
 
-                    # update procurement leftover
-                    df_procurement.loc[product_procurement.name, 'leftover'] = product_procurement['leftover']
+                            # capture the recursive results
+                            recursive_results_procurement.append(
+                                find_resources(
+                                    order, order_id, label,
+                                    resources, mapped_resources, map_priority,
+                                    df_bom, map_bom, threshold
+                                )
+                            )
+                        # get the recursive result from the procurement branch
+                        recursive_results.append(recursive_results_procurement[-1])
 
-                    # capture the recursive results
-                    recursive_results.append(
-                        find_resources(
-                            order, index, label,
-                            df_production, df_stock, df_movement, df_procurement,
-                            mapped_production, mapped_stock, mapped_movement, mapped_procurement,
-                            df_bom, map_bom
-                        )
-                    )
+            recursive_result = recursive_results[-1]
 
-                # process the list of recursive results
-                recursive_result = recursive_results[-1]
-                return recursive_result
+        return recursive_result
 
-            return df_production, df_stock, df_movement, df_procurement, \
-                mapped_production, mapped_stock, mapped_movement, mapped_procurement
-
-    return find_resources(order, index, label,
-                          df_production, df_stock, df_movement, df_procurement,
-                          mapped_production, mapped_stock, mapped_movement, mapped_procurement,
-                          df_bom, map_bom)
+    return find_resources(order, order_id, label, resources, mapped_resources, map_priority, df_bom, map_bom, threshold)
