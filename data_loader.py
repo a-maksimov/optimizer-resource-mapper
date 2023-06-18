@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from config import threshold
+import config
 from db_connect import db_connect
 
 
@@ -48,7 +48,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_production = pd.DataFrame(results_production_rows, columns=[desc[0] for desc in cursor.description])
     # Filter out numbers close to zero
     df_results_production = df_results_production[
-        abs(df_results_production['solutionvalue']) > threshold]
+        abs(df_results_production['solutionvalue']) > config.threshold]
     # Drop unnecessary columns
     results_production_cols = ['location', 'product', 'bomnum', 'period', 'solutionvalue']
     df_results_production = df_results_production[results_production_cols].copy()
@@ -92,7 +92,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_movement = pd.DataFrame(results_movement_rows, columns=[desc[0] for desc in cursor.description])
     # Filter out numbers close to zero
     df_results_movement = df_results_movement[
-        abs(df_results_movement['solutionvalue']) > threshold]
+        abs(df_results_movement['solutionvalue']) > config.threshold]
     # Drop unnecessary columns
     df_results_movement_cols = ['loc_from', 'loc_to', 'product', 'period', 'solutionvalue', 'transport_type']
     df_results_movement = df_results_movement[df_results_movement_cols].copy()
@@ -117,7 +117,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Save the results in a DataFrame
     df_results_procurement = pd.DataFrame(results_procurement_rows, columns=[desc[0] for desc in cursor.description])
     # Filter out values close to zero
-    df_results_procurement = df_results_procurement[abs(df_results_procurement['solutionvalue']) > threshold]
+    df_results_procurement = df_results_procurement[abs(df_results_procurement['solutionvalue']) > config.threshold]
     # Drop unnecessary columns
     df_results_procurement_cols = ['location', 'product', 'period', 'solutionvalue', 'supplier']
     df_results_procurement = df_results_procurement[df_results_procurement_cols].copy()
@@ -137,7 +137,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_initial_stock = pd.DataFrame(initial_stock_rows, columns=[desc[0] for desc in cursor.description])
     # Filter out values close to zero
     df_initial_stock = df_initial_stock[~df_initial_stock['initialstock'].isna()]
-    df_initial_stock = df_initial_stock[abs(df_initial_stock['initialstock']) > threshold]
+    df_initial_stock = df_initial_stock[abs(df_initial_stock['initialstock']) > config.threshold]
     # Drop unnecessary columns
     initial_stock_cols = ['location', 'product', 'initialstock', 'period']
     df_initial_stock = df_initial_stock[initial_stock_cols].copy()
@@ -198,7 +198,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Save the results in a DataFrame
     df_demand = pd.DataFrame(demand_rows, columns=[desc[0] for desc in cursor.description])
     # Filter out values close to zero
-    df_demand = df_demand[abs(df_demand['quantity']) > threshold]
+    df_demand = df_demand[abs(df_demand['quantity']) > config.threshold]
     # Drop unnecessary columns
     demand_cols = ['location', 'product', 'client', 'quantity', 'price', 'period']
     df_demand = df_demand[demand_cols].copy()
@@ -217,7 +217,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Save the results in a DataFrame
     df_results_sale = pd.DataFrame(sale_rows, columns=[desc[0] for desc in cursor.description])
     # Filter out values close to zero
-    df_results_sale = df_results_sale[abs(df_results_sale['solutionvalue']) > threshold]
+    df_results_sale = df_results_sale[abs(df_results_sale['solutionvalue']) > config.threshold]
     # Drop unnecessary columns
     results_sale_cols = ['location', 'product', 'client', 'solutionvalue', 'period']
     df_results_sale = df_results_sale[results_sale_cols].copy()
@@ -251,44 +251,8 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     cursor.close()
     conn.close()
 
-    # assign 'loc_from' and 'lock_to' for each table for consistency
-    df_results_stock = df_results_stock.assign(
-        loc_from=df_results_stock['location'],
-        loc_to=df_results_stock['location'],
-        type='stock',
-    )
-    df_results_stock['keys'] = df_results_stock.apply(
-        lambda row: '.'.join(row[['location', 'period', 'product']].astype(str)), axis=1)
-
-    df_results_sale = df_results_sale.assign(
-        loc_from=df_results_sale['location'],
-        loc_to=df_results_sale['location'],
-        type='sale'
-    )
-    df_results_sale['keys'] = df_results_sale.apply(
-        lambda row: '.'.join(row[['client', 'period', 'location', 'product']].astype(str)), axis=1)
-
-    df_results_production = df_results_production.assign(
-        loc_from=df_results_production['location'],
-        loc_to=df_results_production['location'],
-        type='production'
-    )
-    df_results_production['keys'] = df_results_production.apply(
-        lambda row: '.'.join(row[['location', 'period', 'product', 'bomnum']].astype(str)), axis=1)
-
-    df_results_procurement = df_results_procurement.assign(
-        loc_from=df_results_procurement['location'],
-        loc_to=df_results_procurement['location'],
-        type='procurement'
-    )
-    df_results_procurement['keys'] = df_results_procurement.apply(
-        lambda row: '.'.join(row[['product', 'supplier', 'period']].astype(str)), axis=1)
-
-    df_results_movement = df_results_movement.assign(type='movement')
-    df_results_movement['keys'] = df_results_movement.apply(
-        lambda row: '.'.join(row[['loc_to', 'loc_from', 'product', 'period', 'transport_type']].astype(str)), axis=1)
-
-    # sorting parameters
+    # Parameters
+    # Sorting parameters
     if time_direction == 'backward' and priority == 'total_price':
         parameters_list = [False, False]
     else:
@@ -296,9 +260,65 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_sale = df_results_sale.sort_values(['period', 'total_price'], ascending=parameters_list).reset_index(
         drop=True)
 
-    # whether to ignore lead time
+    # Whether to ignore lead time
     if not lead_time:
         df_results_production['leadtime'] = 0
         df_results_movement['leadtime'] = 0
+
+    # Save input data to file
+    filepath = f'input/resource_mapper_input_{config.time_direction}_{config.priority}.xlsx'
+    with pd.ExcelWriter(filepath) as writer:
+        df_results_sale.to_excel(writer, sheet_name='sales')
+        df_results_stock.to_excel(writer, sheet_name='stock', index=False)
+        df_results_production.to_excel(writer, sheet_name='production', index=False)
+        df_results_movement.to_excel(writer, sheet_name='movement', index=False)
+        df_results_procurement.to_excel(writer, sheet_name='procurement', index=False)
+
+    # Assign 'loc_from' and 'lock_to' and 'type' for each input table for consistency
+    df_results_stock = df_results_stock.assign(
+        loc_from=df_results_stock['location'],
+        loc_to=df_results_stock['location'],
+        type='stock',
+    )
+    df_results_sale = df_results_sale.assign(
+        loc_from=df_results_sale['location'],
+        loc_to=df_results_sale['location'],
+        type='sale'
+    )
+    df_results_production = df_results_production.assign(
+        loc_from=df_results_production['location'],
+        loc_to=df_results_production['location'],
+        type='production'
+    )
+    df_results_procurement = df_results_procurement.assign(
+        loc_from=df_results_procurement['location'],
+        loc_to=df_results_procurement['location'],
+        type='procurement'
+    )
+    df_results_movement = df_results_movement.assign(type='movement')
+
+    # Create unique keys
+    df_results_sale['keys'] = df_results_sale.apply(
+        lambda row: '.'.join(row[['client', 'period', 'location', 'product']].astype(str)), axis=1)
+    df_results_production['keys'] = df_results_production.apply(
+        lambda row: '.'.join(row[['location', 'period', 'product', 'bomnum']].astype(str)), axis=1)
+    df_results_stock['keys'] = df_results_stock.apply(
+        lambda row: '.'.join(row[['location', 'period', 'product']].astype(str)), axis=1)
+    df_results_movement['keys'] = df_results_movement.apply(
+        lambda row: '.'.join(row[['loc_to', 'loc_from', 'product', 'period', 'transport_type']].astype(str)), axis=1)
+    df_results_procurement['keys'] = df_results_procurement.apply(
+        lambda row: '.'.join(row[['product', 'supplier', 'period']].astype(str)), axis=1)
+
+    # Initialize residuals counting
+    df_results_sale['residual'] = df_results_sale['solutionvalue']
+
+    # Initialize leftovers counting for the resources
+    df_results_stock['is_leftover'] = df_results_stock['initialstock']
+    df_results_stock['sv_leftover'] = df_results_stock['solutionvalue']
+    df_results_stock['ps_leftover'] = df_results_stock['period_spent']
+    df_results_stock['er_leftover'] = df_results_stock['extra_res']
+    df_results_production['leftover'] = df_results_production['solutionvalue']
+    df_results_movement['leftover'] = df_results_movement['solutionvalue']
+    df_results_procurement['leftover'] = df_results_procurement['solutionvalue']
 
     return df_results_sale, df_results_stock, df_results_production, df_results_movement, df_results_procurement, df_bom

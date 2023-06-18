@@ -19,27 +19,6 @@ def run_resource_mapper():
         config.lead_time
     )
 
-    filepath = f'input/resource_mapper_input_{config.time_direction}_{config.priority}.xlsx'
-    with pd.ExcelWriter(filepath) as writer:
-        df_sales.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='sales')
-        df_stock.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='stock', index=False)
-        df_production.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='production', index=False)
-        df_movement.to_excel(writer, sheet_name='movement', index=False)
-        df_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='procurement', index=False)
-
-    # initialize residual counting for resources
-    df_stock['residual'] = df_stock['solutionvalue']
-    df_movement['residual'] = df_movement['solutionvalue']
-
-    # initialize leftover counting for resources
-    df_stock['is_leftover'] = df_stock['initialstock']
-    df_stock['sv_leftover'] = df_stock['solutionvalue']
-    df_stock['ps_leftover'] = df_stock['period_spent']
-    df_stock['er_leftover'] = df_stock['extra_res']
-    df_production['leftover'] = df_production['solutionvalue']
-    df_movement['leftover'] = df_movement['solutionvalue']
-    df_procurement['leftover'] = df_procurement['solutionvalue']
-
     # Create empty DataFrames to store the mapped resources
     mapped_stock = pd.DataFrame()
     mapped_production = pd.DataFrame()
@@ -83,24 +62,98 @@ def run_resource_mapper():
             print(f'\nOrder: {order_id} ({label}) has been mapped.')
 
             # update mapped sales
-            order = order.drop(labels='leftover').to_frame().T
-            order['label'] = label
+            order = order.to_frame().T
             mapped_sales = pd.concat([mapped_sales, order])
 
+    # save the results
     filepath = f'results/resource_mapped_results_{config.time_direction}_{config.priority}.xlsx'
     with pd.ExcelWriter(filepath) as writer:
-        mapped_sales.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='mapped_sales')
-        mapped_stock.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='mapped_stock', index=False)
-        mapped_production.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='mapped_production', index=False)
-        mapped_movement.to_excel(writer, sheet_name='mapped_movement', index=False)
-        mapped_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='mapped_procurement', index=False)
+        mapped_sales[
+            [
+                'keys',
+                'location',
+                'product',
+                'client',
+                'solutionvalue',
+                'period',
+                'quantity',
+                'price',
+                'total_price',
+                'residual'
+            ]
+        ].to_excel(writer, sheet_name='mapped_sales')
+        mapped_stock[
+            [
+                'order_id',
+                'label',
+                'keys',
+                'location',
+                'product',
+                'period',
+                'solutionvalue',
+                'initialstock',
+                'period_spent',
+                'residual',
+                'ps_leftover',
+                'spend',
+                'store'
+            ]
+        ].to_excel(writer, sheet_name='mapped_stock', index=False)
+
+        mapped_production[
+            [
+                'order_id',
+                'label',
+                'keys',
+                'location',
+                'product',
+                'bomnum',
+                'period',
+                'solutionvalue',
+                'leadtime',
+                'leftover',
+                'spend'
+            ]
+        ].to_excel(writer, sheet_name='mapped_production', index=False)
+        mapped_movement[
+            [
+                'order_id',
+                'label',
+                'keys',
+                'loc_from',
+                'loc_to',
+                'product',
+                'period',
+                'transport_type',
+                'solutionvalue',
+                'leadtime',
+                'residual',
+                'leftover',
+                'spend'
+            ]
+        ].to_excel(writer, sheet_name='mapped_movement', index=False)
+        mapped_procurement[
+            [
+                'keys',
+                'order_id',
+                'label',
+                'location',
+                'product',
+                'period',
+                'solutionvalue',
+                'supplier',
+                'leftover',
+                'spend'
+            ]
+        ].to_excel(writer, sheet_name='mapped_procurement', index=False)
 
     filepath = f'results/resource_output_resources_{config.time_direction}_{config.priority}.xlsx'
     with pd.ExcelWriter(filepath) as writer:
         df_production.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_production', index=False)
         df_stock.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_stock', index=False)
         df_movement.to_excel(writer, sheet_name='output_movement', index=False)
-        df_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_procurement', index=False)
+        df_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_procurement',
+                                                                     index=False)
 
 
 if __name__ == '__main__':
