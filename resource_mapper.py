@@ -425,6 +425,10 @@ def map_resources(order, order_id, label,
 
                                         # set the name of the Series to the index-label of the row
                                         product_bom_item.name = df_bomlist.index[j]
+                                        # TODO: resource mapping
+                                        # get capacity
+                                        capacity = df_production_capacity[df_production_capacity['bomnum'] == product_bom_item['bomnum']]
+                                        capacity['spend'] = product_bom_item['solutionvalue'] * capacity['coefficient']
 
                                         # capture the recursive results
                                         recursive_results_bom.append(
