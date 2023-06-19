@@ -5,6 +5,44 @@ import config
 from data_loader import data_loader
 
 
+def calculate_cost(mapped_resources):
+    """ Calculates costs of the mapped results """
+    # unpack the mapped resources
+    mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity = mapped_resources
+
+    # calculate total costs
+    mapped_stock['total_cost'] = -mapped_stock['cost'] * mapped_stock['store']
+    mapped_movement['total_cost'] = -mapped_movement['cost'] * mapped_movement['spend']
+    mapped_procurement['total_cost'] = -mapped_procurement['cost'] * mapped_procurement['spend'] * mapped_procurement[
+        'coefficient']
+    mapped_capacity['total_cost'] = -mapped_capacity['cost'] * mapped_capacity['spend']
+    mapped_sales['total_cost'] = 0
+
+    cost_stocks = mapped_stock.groupby('label')['total_cost'].sum()
+    cost_movement = mapped_movement.groupby('label')['total_cost'].sum()
+    cost_procurement = mapped_procurement.groupby('label')['total_cost'].sum()
+    cost_capacity = mapped_capacity.groupby('label')['total_cost'].sum()
+
+    # if the order is in the mapped table, add up its cost
+    for order in pd.unique(mapped_sales['keys']):
+        order_cost = 0
+        if order in cost_stocks.index:
+            order_cost += cost_stocks.loc[order]
+        if order in cost_movement.index:
+            order_cost += cost_movement.loc[order]
+        if order in cost_procurement:
+            order_cost += cost_procurement.loc[order]
+        if order in cost_capacity:
+            order_cost += cost_capacity.loc[order]
+        # add up the cost
+        mapped_sales.loc[mapped_sales['keys'] == order, 'total_cost'] = order_cost
+
+    # calculate the unit cost
+    mapped_sales['unit_cost'] = mapped_sales['total_cost'] / mapped_sales['solutionvalue']
+
+    return mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity
+
+
 def run_resource_mapper():
     pd.set_option('display.float_format', lambda x: '%.3f' % x)
 
@@ -65,7 +103,17 @@ def run_resource_mapper():
             # update mapped sales
             order = order.to_frame().T
             mapped_sales = pd.concat([mapped_sales, order])
-            mapped_sales['unsatisfied_demand'] = mapped_sales['quantity'] - mapped_sales['solutionvalue']
+
+    # fill nan spend and store with 0
+    mapped_stock = mapped_stock.fillna(0)
+
+    # pack the resources
+    mapped_resources = mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity
+
+    # calculate costs
+    mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity = calculate_cost(mapped_resources)
+
+    mapped_sales['unsatisfied_demand'] = mapped_sales['quantity'] - mapped_sales['solutionvalue']
 
     # save the results
     filepath = f'results/resource_mapped_results_{config.time_direction}_{config.priority}.xlsx'
@@ -82,7 +130,9 @@ def run_resource_mapper():
                 'period',
                 'price',
                 'total_price',
-                'residual'
+                'residual',
+                'total_cost',
+                'unit_cost'
             ]
         ].to_excel(writer, sheet_name='mapped_sales')
         mapped_stock[
@@ -99,7 +149,9 @@ def run_resource_mapper():
                 'residual',
                 'ps_leftover',
                 'spend',
-                'store'
+                'store',
+                'cost',
+                'total_cost'
             ]
         ].to_excel(writer, sheet_name='mapped_stock', index=False)
         mapped_production[
@@ -131,21 +183,26 @@ def run_resource_mapper():
                 'leadtime',
                 'residual',
                 'leftover',
-                'spend'
+                'spend',
+                'cost',
+                'total_cost'
             ]
         ].to_excel(writer, sheet_name='mapped_movement', index=False)
         mapped_procurement[
             [
-                'keys',
                 'order_id',
                 'label',
+                'keys',
                 'location',
                 'product',
                 'period',
                 'solutionvalue',
                 'supplier',
                 'leftover',
-                'spend'
+                'spend',
+                'coefficient',
+                'cost',
+                'total_cost'
             ]
         ].to_excel(writer, sheet_name='mapped_procurement', index=False)
         mapped_capacity[
@@ -159,7 +216,10 @@ def run_resource_mapper():
                 'capacity',
                 'period',
                 'leftover',
-                'spend'
+                'spend',
+                'coefficient',
+                'cost',
+                'total_cost'
             ]
         ].to_excel(writer, sheet_name='mapped_capacity', index=False)
 
@@ -168,7 +228,8 @@ def run_resource_mapper():
         df_production.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_production', index=False)
         df_stock.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_stock', index=False)
         df_movement.to_excel(writer, sheet_name='output_movement', index=False)
-        df_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_procurement', index=False)
+        df_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_procurement',
+                                                                     index=False)
         df_capacity.to_excel(writer, sheet_name='output_capacity', index=False)
 
 

@@ -26,10 +26,10 @@ def map_resources(order, order_id, label,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
     # create empty dataframes for mapping and add columns
-    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'store': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'store': [], 'total_cost': []})
     mapped_stock = pd.DataFrame(columns=df_stock.columns)
     mapped_stock = pd.concat([mapped_stock, t])
-    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'total_cost': []})
     mapped_production = pd.DataFrame(columns=df_production.columns)
     mapped_production = pd.concat([mapped_production, t])
     mapped_movement = pd.DataFrame(columns=df_movement.columns)
@@ -37,7 +37,7 @@ def map_resources(order, order_id, label,
     mapped_procurement = pd.DataFrame(columns=df_procurement.columns)
     mapped_procurement = pd.concat([mapped_procurement, t])
     mapped_capacity = pd.DataFrame(columns=df_capacity.columns)
-    t = pd.DataFrame({'order_id': [], 'label': [], 'spend': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'spend': [], 'total_cost': []})
     mapped_capacity = pd.concat([mapped_capacity, t])
 
     # pack the resources
@@ -235,6 +235,9 @@ def map_resources(order, order_id, label,
         else:
             product_procurement['spend'] = product_procurement['leftover']
             product_procurement['leftover'] = 0
+
+        # calculate cost
+        product_procurement['total_cost'] = product_procurement['spend'] * -product_procurement['cost']
 
         # update the residual
         mapped_resources = update_mapped_residual(order, mapped_resources)
