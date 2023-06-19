@@ -6,7 +6,8 @@ from decimal import Decimal
 # TODO: take into account periods, procurement, costs, leftovers, parametrize, output the order with residual
 def map_resources(order, order_id, label,
                   df_stock, df_production, df_movement, df_procurement, map_priority,
-                  df_bom, map_bom, threshold=Decimal('0.1')):
+                  df_bom, df_capacity,
+                  threshold=Decimal('0.1')):
     """
     Recursively maps the resources in df_production, df_stock and df_movement with index of sale in order
     :param order: pd.Series, sale specification
@@ -18,13 +19,13 @@ def map_resources(order, order_id, label,
     :param df_procurement: pd.Dataframe, data related to procurement
     :param map_priority: dict, priority of resources
     :param df_bom: pd.Dataframe with BOMs data
-    :param map_bom: bool, whether to map BOMs
+    :param df_capacity: pd.Dataframe, data related to production capacities
     :param threshold: Decimal, threshold for comparing real numbers
     :return: tuple of pd.Dataframes: updated and mapped resources
             (df_production, df_stock, df_movement, df_procurement,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
-    # create empty dataframes for mapping
+    # create empty dataframes for mapping and add columns
     t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'store': []})
     mapped_stock = pd.DataFrame(columns=df_stock.columns)
     mapped_stock = pd.concat([mapped_stock, t])
@@ -35,6 +36,9 @@ def map_resources(order, order_id, label,
     mapped_movement = pd.concat([mapped_movement, t])
     mapped_procurement = pd.DataFrame(columns=df_procurement.columns)
     mapped_procurement = pd.concat([mapped_procurement, t])
+    mapped_capacity = pd.DataFrame(columns=df_capacity.columns)
+    t = pd.DataFrame({'order_id': [], 'label': [], 'spend': []})
+    mapped_capacity = pd.concat([mapped_capacity, t])
 
     # pack the resources
     resources = df_stock, df_production, df_movement, df_procurement
@@ -42,11 +46,10 @@ def map_resources(order, order_id, label,
 
     def update_mapped_residual(order, mapped_resources):
 
-        # unpack the resources
+        # unpack the mapped resources
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
-        # find the latest row with the desired 'keys' and update it's residual
-        # also update the residual in the input tables
+        # find the latest row with the desired 'keys' and update its residual
         if order['type'] == 'stock':
             last_index = mapped_stock.loc[mapped_stock['keys'] == order['keys']].index[-1]
             mapped_stock.loc[last_index, 'residual'] = order['residual']
@@ -63,7 +66,7 @@ def map_resources(order, order_id, label,
             last_index = mapped_procurement.loc[mapped_procurement['keys'] == order['keys']].index[-1]
             mapped_procurement.loc[last_index, 'residual'] = order['residual']
 
-        # pack the resources
+        # pack the mapped resources
         mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
 
         return mapped_resources
@@ -233,7 +236,7 @@ def map_resources(order, order_id, label,
             product_procurement['spend'] = product_procurement['leftover']
             product_procurement['leftover'] = 0
 
-        # update residual
+        # update the residual
         mapped_resources = update_mapped_residual(order, mapped_resources)
 
         # unpack the resources
@@ -274,7 +277,32 @@ def map_resources(order, order_id, label,
 
         return df_product_bom
 
-    def find_resources(order, order_id, label, resources, mapped_resources, map_priority, df_bom, map_bom, threshold):
+    def get_capacity(product_bom_item, df_capacity):
+        # get the capacity
+        product_capacity = df_capacity[
+            (df_capacity['bomnum'] == product_bom_item['bomnum']) &
+            (df_capacity['period'] == product_bom_item['period'])
+            ].copy()
+        return product_capacity
+
+    def map_capacity(order_id, label, df_product_capacity, product_bom_item, mapped_capacity, df_capacity):
+        # map the capacity
+        df_product_capacity['order_id'] = order_id
+        df_product_capacity['label'] = label
+        df_product_capacity['spend'] = product_bom_item['solutionvalue'] * df_product_capacity['coefficient']
+        df_product_capacity['leftover'] -= df_product_capacity['spend']
+
+        # map the capacity
+        for i in range(len(df_product_capacity)):
+            mapped_capacity.loc[len(mapped_capacity)] = df_product_capacity.iloc[i]
+
+        # update capacity leftovers
+        df_capacity.loc[df_product_capacity.index, 'leftover'] = df_product_capacity['leftover']
+
+        return mapped_capacity, df_capacity
+
+    def find_resources(order, order_id, label, resources, mapped_resources, mapped_capacity, map_priority, df_bom,
+                       df_capacity, threshold):
 
         # unpack the resources
         df_stock, df_production, df_movement, df_procurement = resources
@@ -283,8 +311,8 @@ def map_resources(order, order_id, label,
         # base case
         if abs(order['residual']) < threshold:
             # convert order to dataframe
-            result = df_stock, df_production, df_movement, df_procurement, \
-                mapped_stock, mapped_production, mapped_movement, mapped_procurement
+            result = df_stock, df_production, df_movement, df_procurement, df_capacity, \
+                mapped_stock, mapped_production, mapped_movement, mapped_procurement, mapped_capacity
             return result
 
         # recursive cases
@@ -295,7 +323,7 @@ def map_resources(order, order_id, label,
             # check stock
             df_product_stock = df_stock[
                 (df_stock['product'] == order['product']) &
-                # if the order is stock, check prev period, otherwise check current stock leftovers
+                # if the order is stock, check previous period, otherwise check current stock leftovers
                 (np.where(df_stock['type'] == order['type'],
                           df_stock['period'] == order['period'] - 1,
                           df_stock['period'] == order['period'])) &
@@ -383,8 +411,9 @@ def map_resources(order, order_id, label,
                             recursive_results_stock.append(
                                 find_resources(
                                     product_stock, order_id, label,
-                                    resources, mapped_resources, map_priority,
-                                    df_bom, map_bom, threshold
+                                    resources, mapped_resources, mapped_capacity,
+                                    map_priority,
+                                    df_bom, df_capacity, threshold
                                 )
                             )
                         # get the recursive result from the stock branch
@@ -413,36 +442,50 @@ def map_resources(order, order_id, label,
                                 resources, mapped_resources
                             )
                             # map BOM
-                            if map_bom:
-                                # get BOM
-                                df_bomlist = get_bom_orders(product_production, df_bom)
-                                # if the product has inputs
-                                if len(df_bomlist) > 0:
-                                    # map BOM
-                                    recursive_results_bom = []
-                                    for j in range(len(df_bomlist)):
-                                        # get the BOM item from found BOM list
-                                        product_bom_item = df_bomlist.iloc[j].copy()
+                            df_bomlist = get_bom_orders(product_production, df_bom)
+                            # if the product has inputs
+                            if len(df_bomlist) > 0:
+                                # map BOM
+                                recursive_results_bom = []
+                                for j in range(len(df_bomlist)):
+                                    # get the BOM item from found BOM list
+                                    product_bom_item = df_bomlist.iloc[j].copy()
 
-                                        # set the name of the Series to the index-label of the row
-                                        product_bom_item.name = df_bomlist.index[j]
+                                    # set the name of the Series to the index-label of the row
+                                    product_bom_item.name = df_bomlist.index[j]
 
-                                        # capture the recursive results
-                                        recursive_results_bom.append(
-                                            find_resources(
-                                                product_bom_item, order_id, label,
-                                                resources, mapped_resources, map_priority,
-                                                df_bom, map_bom, threshold
-                                            )
+                                    # get capacities
+                                    df_product_capacity = get_capacity(product_bom_item, df_capacity)
+
+                                    # map capacities
+                                    mapped_capacity, df_capacity = map_capacity(
+                                        order_id, label,
+                                        df_product_capacity,
+                                        product_bom_item,
+                                        mapped_capacity,
+                                        df_capacity
+                                    )
+
+                                    # capture the recursive results
+                                    recursive_results_bom.append(
+                                        find_resources(
+                                            product_bom_item, order_id, label,
+                                            resources, mapped_resources, mapped_capacity,
+                                            map_priority,
+                                            df_bom, df_capacity,
+                                            threshold
                                         )
-                                    recursive_results_production.append(recursive_results_bom[-1])
+                                    )
+                                recursive_results_production.append(recursive_results_bom[-1])
 
                             # capture the recursive results
                             recursive_results_production.append(
                                 find_resources(
                                     order, order_id, label,
-                                    resources, mapped_resources, map_priority,
-                                    df_bom, map_bom, threshold
+                                    resources, mapped_resources, mapped_capacity,
+                                    map_priority,
+                                    df_bom, df_capacity,
+                                    threshold
                                 )
                             )
 
@@ -476,8 +519,10 @@ def map_resources(order, order_id, label,
                             recursive_results_movement.append(
                                 find_resources(
                                     product_movement, order_id, label,
-                                    resources, mapped_resources, map_priority,
-                                    df_bom, map_bom, threshold
+                                    resources, mapped_resources, mapped_capacity,
+                                    map_priority,
+                                    df_bom, df_capacity,
+                                    threshold
                                 )
                             )
                         # get the recursive result from the movement branch
@@ -510,8 +555,10 @@ def map_resources(order, order_id, label,
                             recursive_results_procurement.append(
                                 find_resources(
                                     order, order_id, label,
-                                    resources, mapped_resources, map_priority,
-                                    df_bom, map_bom, threshold
+                                    resources, mapped_resources, mapped_capacity,
+                                    map_priority,
+                                    df_bom, df_capacity,
+                                    threshold
                                 )
                             )
                         # get the recursive result from the procurement branch
@@ -521,4 +568,10 @@ def map_resources(order, order_id, label,
 
         return recursive_result
 
-    return find_resources(order, order_id, label, resources, mapped_resources, map_priority, df_bom, map_bom, threshold)
+    return find_resources(
+        order, order_id, label,
+        resources, mapped_resources, mapped_capacity,
+        map_priority,
+        df_bom, df_capacity,
+        threshold
+    )

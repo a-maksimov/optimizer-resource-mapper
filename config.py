@@ -8,7 +8,6 @@ period = 0, 1, 2
 threshold = Decimal('0.10')
 time_direction = 'backward'
 priority = 'total_price'
-map_bom = True
 map_priority = {
     'stock': 1,
     'production': 0,

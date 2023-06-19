@@ -23,17 +23,18 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
         WHERE datasetid = {datasetid} AND period IN {period}
         ORDER BY CAST(period AS int) {sorting}
     """)
-    production_lead_time_rows = cursor.fetchall()
+    production_rows = cursor.fetchall()
     # Save the results in a DataFrame
-    df_production_lead_time = pd.DataFrame(production_lead_time_rows, columns=[desc[0] for desc in cursor.description])
+    df_production = pd.DataFrame(production_rows,
+                                 columns=[desc[0] for desc in cursor.description])
     # Cast integer datatypes
-    df_production_lead_time['period'] = df_production_lead_time['period'].astype(int)
-    df_production_lead_time['duration'] = df_production_lead_time['duration'].astype(int)
+    df_production['period'] = df_production['period'].astype(int)
+    df_production['duration'] = df_production['duration'].astype(int)
     # Drop unnecessary columns
-    production_lead_time_cols = ['location', 'product', 'bomnum', 'period', 'duration']
-    df_production_lead_time = df_production_lead_time[production_lead_time_cols].copy()
+    production_cols = ['location', 'product', 'bomnum', 'period', 'duration']
+    df_production = df_production[production_cols].copy()
     # Drop duplicates
-    df_production_lead_time = df_production_lead_time.drop_duplicates()
+    df_production = df_production.drop_duplicates()
 
     # Results Production
     # Query the products from the results_production table
@@ -56,10 +57,28 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_production = df_results_production.drop_duplicates()
 
     # Merge Production with Lead time
-    df_results_production = pd.merge(df_results_production, df_production_lead_time,
+    df_results_production = pd.merge(df_results_production, df_production,
                                      on=['location', 'bomnum', 'product', 'period'], how='left')
     # Rename 'duration' to 'leadtime'
     df_results_production = df_results_production.rename(columns={'duration': 'leadtime'})
+
+    # Optimizer Capacity
+    # Query the products from the optimizer_production table
+    cursor.execute(f"""
+        SELECT *
+        FROM optimizer_production
+        WHERE datasetid = {datasetid} AND period IN {period}
+    """)
+    capacity_rows = cursor.fetchall()
+    # Save the results in a DataFrame
+    df_capacity = pd.DataFrame(capacity_rows, columns=[desc[0] for desc in cursor.description])
+    # Cast integer datatypes
+    df_capacity['period'] = df_production['period'].astype(int)
+    # Drop unnecessary columns
+    capacity_cols = ['location', 'product', 'bomnum', 'resource', 'capacity', 'coefficient', 'period']
+    df_capacity = df_capacity[capacity_cols].copy()
+    # Drop duplicates
+    df_capacity = df_capacity.drop_duplicates()
 
     # Optimizer Transportation
     # Query the products from the optimizer_transportation table
@@ -320,5 +339,6 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_production['leftover'] = df_results_production['solutionvalue']
     df_results_movement['leftover'] = df_results_movement['solutionvalue']
     df_results_procurement['leftover'] = df_results_procurement['solutionvalue']
+    df_capacity['leftover'] = df_capacity['capacity']
 
-    return df_results_sale, df_results_stock, df_results_production, df_results_movement, df_results_procurement, df_bom
+    return df_results_sale, df_results_stock, df_results_production, df_results_movement, df_results_procurement, df_bom, df_capacity

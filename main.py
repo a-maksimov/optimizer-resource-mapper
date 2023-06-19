@@ -9,7 +9,7 @@ def run_resource_mapper():
     pd.set_option('display.float_format', lambda x: '%.3f' % x)
 
     # load data
-    df_sales, df_stock, df_production, df_movement, df_procurement, df_bom = data_loader(
+    df_sales, df_stock, df_production, df_movement, df_procurement, df_bom, df_capacity = data_loader(
         config.configid,
         config.datasetid,
         config.runid,
@@ -40,15 +40,14 @@ def run_resource_mapper():
         label = order['keys']
 
         # run recursive mapping and get updated resources
-        result = map_resources(order, order_id, label,
-                               df_stock, df_production, df_movement, df_procurement, config.map_priority,
-                               df_bom, config.map_bom, config.threshold)
+        result = map_resources(order, order_id, label, df_stock, df_production, df_movement, df_procurement,
+                               config.map_priority, df_bom, df_capacity, config.threshold)
 
         # if the product was found in the resources in any location
         if result:
             # unpack the results
-            df_stock_updated, df_production_updated, df_movement_updated, df_procurement_updated, \
-                stock, production, movement, procurement = result
+            df_stock_updated, df_production_updated, df_movement_updated, df_procurement_updated, df_capacity_updated, \
+                stock, production, movement, procurement, capacity = result
 
             # update resources dataframes
             df_stock, df_production, df_movement, df_procurement = \
@@ -59,6 +58,7 @@ def run_resource_mapper():
             mapped_production = pd.concat([mapped_production, production], ignore_index=True)
             mapped_movement = pd.concat([mapped_movement, movement], ignore_index=True)
             mapped_procurement = pd.concat([mapped_procurement, procurement], ignore_index=True)
+            mapped_capacity = pd.concat([mapped_capacity, capacity], ignore_index=True)
 
             print(f'\nOrder: {order_id} ({label}) has been mapped.')
 
@@ -100,7 +100,6 @@ def run_resource_mapper():
                 'store'
             ]
         ].to_excel(writer, sheet_name='mapped_stock', index=False)
-
         mapped_production[
             [
                 'order_id',
@@ -147,16 +146,29 @@ def run_resource_mapper():
                 'spend'
             ]
         ].to_excel(writer, sheet_name='mapped_procurement', index=False)
+        mapped_capacity[
+            [
+                'order_id',
+                'label',
+                'location',
+                'product',
+                'bomnum',
+                'resource',
+                'capacity',
+                'period',
+                'leftover',
+                'spend'
+            ]
+        ].to_excel(writer, sheet_name='mapped_capacity', index=False)
 
     filepath = f'results/resource_output_resources_{config.time_direction}_{config.priority}.xlsx'
     with pd.ExcelWriter(filepath) as writer:
         df_production.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_production', index=False)
         df_stock.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_stock', index=False)
         df_movement.to_excel(writer, sheet_name='output_movement', index=False)
-        df_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_procurement',
-                                                                     index=False)
+        df_procurement.drop(['loc_from', 'loc_to'], axis=1).to_excel(writer, sheet_name='output_procurement', index=False)
+        df_capacity.to_excel(writer, sheet_name='output_capacity', index=False)
 
 
 if __name__ == '__main__':
     run_resource_mapper()
-
