@@ -93,7 +93,7 @@ def run_resource_mapper():
                 'solutionvalue',
                 'initialstock',
                 'period_spent',
-                'residual',
+                # 'residual',
                 'ps_leftover',
                 'spend',
                 'store'
@@ -127,7 +127,7 @@ def run_resource_mapper():
                 'transport_type',
                 'solutionvalue',
                 'leadtime',
-                'residual',
+                # 'residual',
                 'leftover',
                 'spend'
             ]

@@ -24,11 +24,11 @@ def map_resources(order, order_id, label,
             (df_production, df_stock, df_movement, df_procurement,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
-    # create empty dataframes for mapping
-    t = pd.DataFrame({'order_id': [], 'label': [], 'spend': [], 'store': []})
+    # create empty dataframes for mapping and add columns
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'store': []})
     mapped_stock = pd.DataFrame(columns=df_stock.columns)
     mapped_stock = pd.concat([mapped_stock, t])
-    t = pd.DataFrame({'order_id': [], 'label': [], 'spend': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': []})
     mapped_production = pd.DataFrame(columns=df_production.columns)
     mapped_production = pd.concat([mapped_production, t])
     mapped_movement = pd.DataFrame(columns=df_movement.columns)
@@ -40,14 +40,12 @@ def map_resources(order, order_id, label,
     resources = df_stock, df_production, df_movement, df_procurement
     mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
 
-    def update_mapped_residual(order, resources, mapped_resources):
+    def update_mapped_residual(order, mapped_resources):
 
-        # unpack the resources
-        df_stock, df_production, df_movement, df_procurement = resources
+        # unpack the mapped resources
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
-        # find the latest row with the desired 'keys' and update it's residual
-        # also update the residual in the input tables
+        # find the latest row with the desired 'keys' and update its residual
         if order['type'] == 'stock':
             last_index = mapped_stock.loc[mapped_stock['keys'] == order['keys']].index[-1]
             mapped_stock.loc[last_index, 'residual'] = order['residual']
@@ -64,11 +62,10 @@ def map_resources(order, order_id, label,
             last_index = mapped_procurement.loc[mapped_procurement['keys'] == order['keys']].index[-1]
             mapped_procurement.loc[last_index, 'residual'] = order['residual']
 
-        # pack the resources
-        resources = df_stock, df_production, df_movement, df_procurement
+        # pack the mapped resources
         mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
 
-        return resources, mapped_resources
+        return mapped_resources
 
     def map_stock(order, product_stock, resources, mapped_resources):
 
@@ -95,8 +92,8 @@ def map_resources(order, order_id, label,
                 product_stock['spend'] = product_stock['ps_leftover']
                 product_stock['ps_leftover'] = 0
 
-        # update residual
-        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+        # update the residual
+        mapped_resources = update_mapped_residual(order, mapped_resources)
 
         # unpack the resources
         df_stock, df_production, df_movement, df_procurement = resources
@@ -158,8 +155,8 @@ def map_resources(order, order_id, label,
             product_production['spend'] = product_production['leftover']
             product_production['leftover'] = 0
 
-        # update residual
-        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+        # update the residual
+        mapped_resources = update_mapped_residual(order, mapped_resources)
 
         # unpack the resources
         df_stock, df_production, df_movement, df_procurement = resources
@@ -195,8 +192,8 @@ def map_resources(order, order_id, label,
             product_movement['spend'] = product_movement['leftover']
             product_movement['leftover'] = 0
 
-        # update residual
-        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+        # update the residual
+        mapped_resources = update_mapped_residual(order, mapped_resources)
 
         # unpack the resources
         df_stock, df_production, df_movement, df_procurement = resources
@@ -235,8 +232,8 @@ def map_resources(order, order_id, label,
             product_procurement['spend'] = product_procurement['leftover']
             product_procurement['leftover'] = 0
 
-        # update residual
-        resources, mapped_resources = update_mapped_residual(order, resources, mapped_resources)
+        # update the residual
+        mapped_resources = update_mapped_residual(order, mapped_resources)
 
         # unpack the resources
         df_stock, df_production, df_movement, df_procurement = resources
@@ -297,7 +294,7 @@ def map_resources(order, order_id, label,
             # check stock
             df_product_stock = df_stock[
                 (df_stock['product'] == order['product']) &
-                # if the order is stock, check prev period, otherwise check current stock leftovers
+                # if the order is stock, check previous period, otherwise check current stock leftovers
                 (np.where(df_stock['type'] == order['type'],
                           df_stock['period'] == order['period'] - 1,
                           df_stock['period'] == order['period'])) &

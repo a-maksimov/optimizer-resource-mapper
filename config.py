@@ -11,8 +11,8 @@ time_direction = 'backward'
 priority = 'total_price'
 map_bom = True
 map_priority = {
-    'stock': 1,
-    'production': 0,
+    'stock': 0,
+    'production': 1,
     'movement': 2,
     'procurement': 3
 }
