@@ -65,6 +65,7 @@ def run_resource_mapper():
             # update mapped sales
             order = order.to_frame().T
             mapped_sales = pd.concat([mapped_sales, order])
+            mapped_sales['unsatisfied_demand'] = mapped_sales['quantity'] - mapped_sales['solutionvalue']
 
     # save the results
     filepath = f'results/resource_mapped_results_{config.time_direction}_{config.priority}.xlsx'
@@ -75,9 +76,10 @@ def run_resource_mapper():
                 'location',
                 'product',
                 'client',
-                'solutionvalue',
-                'period',
                 'quantity',
+                'solutionvalue',
+                'unsatisfied_demand',
+                'period',
                 'price',
                 'total_price',
                 'residual'

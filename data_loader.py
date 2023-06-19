@@ -41,7 +41,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     cursor.execute(f"""
         SELECT *
         FROM results_production
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period}
+        WHERE configid = {configid} AND datasetid = {datasetid} AND runid = {runid} AND period IN {period}
         ORDER BY CAST(period AS int) {sorting}
     """)
     results_production_rows = cursor.fetchall()
@@ -73,9 +73,9 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Save the results in a DataFrame
     df_capacity = pd.DataFrame(capacity_rows, columns=[desc[0] for desc in cursor.description])
     # Cast integer datatypes
-    df_capacity['period'] = df_production['period'].astype(int)
+    df_capacity['period'] = df_capacity['period'].astype(int)
     # Drop unnecessary columns
-    capacity_cols = ['location', 'product', 'bomnum', 'resource', 'capacity', 'coefficient', 'period']
+    capacity_cols = ['location', 'product', 'bomnum', 'resource', 'capacity', 'coefficient', 'period', 'cost']
     df_capacity = df_capacity[capacity_cols].copy()
     # Drop duplicates
     df_capacity = df_capacity.drop_duplicates()
@@ -87,23 +87,23 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
         FROM optimizer_transportation
         WHERE datasetid = {datasetid} AND period IN {period}
     """)
-    movement_lead_time_rows = cursor.fetchall()
+    movement_rows = cursor.fetchall()
     # Save the results in a DataFrame
-    df_movement_lead_time = pd.DataFrame(movement_lead_time_rows, columns=[desc[0] for desc in cursor.description])
+    df_movement = pd.DataFrame(movement_rows, columns=[desc[0] for desc in cursor.description])
     # Cast integers
-    df_movement_lead_time['duration'] = df_movement_lead_time['duration'].astype(int)
+    df_movement['duration'] = df_movement['duration'].astype(int)
     # Drop unnecessary columns
-    movement_lead_time_cols = ['loc_from', 'loc_to', 'product', 'period', 'transport_type', 'duration']
-    df_movement_lead_time = df_movement_lead_time[movement_lead_time_cols].copy()
+    movement_cols = ['loc_from', 'loc_to', 'product', 'period', 'transport_type', 'duration', 'cost']
+    df_movement = df_movement[movement_cols].copy()
     # Drop duplicates
-    df_movement_lead_time = df_movement_lead_time.drop_duplicates()
+    df_movement = df_movement.drop_duplicates()
 
     # Results Movements
     # Query the products from the results_movement table
     cursor.execute(f"""
         SELECT *
         FROM results_movement
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period}
+        WHERE configid = {configid} AND datasetid = {datasetid} AND runid = {runid} AND period IN {period}
         ORDER BY CAST(period AS int) {sorting}
     """)
     results_movement_rows = cursor.fetchall()
@@ -118,18 +118,36 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Drop duplicates
     df_results_movement = df_results_movement.drop_duplicates()
 
-    # Merge result movement with lead times
-    df_results_movement = pd.merge(df_results_movement, df_movement_lead_time,
+    # Merge result movement with lead times and cost
+    df_results_movement = pd.merge(df_results_movement, df_movement,
                                    on=['loc_from', 'loc_to', 'product', 'period', 'transport_type'], how='left')
     # Rename 'duration' to 'leadtime'
     df_results_movement = df_results_movement.rename(columns={'duration': 'leadtime'})
+
+    # Optimizer Procurement
+    # Query the products from the optimiier_procurement table
+    cursor.execute(f"""
+        SELECT *
+        FROM optimizer_procurement
+        WHERE datasetid = {datasetid} AND period IN {period}
+        ORDER BY CAST(period AS int) {sorting}
+    """)
+    procurement_rows = cursor.fetchall()
+
+    # Save the results in a DataFrame
+    df_procurement = pd.DataFrame(procurement_rows, columns=[desc[0] for desc in cursor.description])
+    # Drop unnecessary columns
+    procurement_cols = ['location', 'product', 'period', 'supplier', 'cost', 'coefficient']
+    df_procurement = df_procurement[procurement_cols].copy()
+    # Drop duplicates
+    df_procurement = df_procurement.drop_duplicates()
 
     # Results Procurement
     # Query the products from the results_procurement table
     cursor.execute(f"""
         SELECT *
         FROM results_procurement
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period}
+        WHERE configid = {configid} AND datasetid = {datasetid} AND runid = {runid} AND period IN {period}
         ORDER BY CAST(period AS int) {sorting}
     """)
     results_procurement_rows = cursor.fetchall()
@@ -143,32 +161,33 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Drop duplicates
     df_results_procurement = df_results_procurement.drop_duplicates()
 
-    # Initial Stock
-    # Execute the query to retrieve demands
+    # Merge result procurement with cost
+    df_results_procurement = pd.merge(df_results_procurement, df_procurement,
+                                      on=['location', 'product', 'period', 'supplier'], how='left')
+
+    # Initial Stock and Cost
+    # Execute the query to retrieve stock data
     cursor.execute(f"""
            SELECT *
            FROM optimizer_storage
            WHERE datasetid = {datasetid} AND period IN {period}
            ORDER BY CAST(period AS int) {sorting}
        """)
-    initial_stock_rows = cursor.fetchall()
+    stock_rows = cursor.fetchall()
     # Save the results in a DataFrame
-    df_initial_stock = pd.DataFrame(initial_stock_rows, columns=[desc[0] for desc in cursor.description])
-    # Filter out values close to zero
-    df_initial_stock = df_initial_stock[~df_initial_stock['initialstock'].isna()]
-    df_initial_stock = df_initial_stock[abs(df_initial_stock['initialstock']) > config.threshold]
+    df_stock = pd.DataFrame(stock_rows, columns=[desc[0] for desc in cursor.description])
     # Drop unnecessary columns
-    initial_stock_cols = ['location', 'product', 'initialstock', 'period']
-    df_initial_stock = df_initial_stock[initial_stock_cols].copy()
+    initial_stock_cols = ['location', 'product', 'initialstock', 'period', 'cost']
+    df_stock = df_stock[initial_stock_cols].copy()
     # Drop duplicates
-    df_initial_stock = df_initial_stock.drop_duplicates()
+    df_stock = df_stock.drop_duplicates()
 
     # Results Stock
     # Query the products from the results_production table
     cursor.execute(f"""
         SELECT *
         FROM results_stock
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period}
+        WHERE configid = {configid} AND datasetid = {datasetid} AND runid = {runid} AND period IN {period}
         ORDER BY CAST(period AS int) {sorting}
     """)
     results_stock_rows = cursor.fetchall()
@@ -181,16 +200,14 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_stock = df_results_stock.drop_duplicates()
 
     # Merge result stock with initial stock
-    df_results_stock = pd.merge(df_results_stock, df_initial_stock, on=['location', 'product', 'period'],
-                                how='left').fillna(0)
+    df_results_stock = pd.merge(df_results_stock, df_stock, on=['location', 'product', 'period'], how='left').fillna(0)
 
     # Sort the dataframe by location, product, and period in descending order
     df_results_stock = df_results_stock.sort_values(['location', 'product', 'period'],
-                                                    ascending=[True, True, False])
+                                                    ascending=[True, True, False]).reset_index(drop=True)
 
     # Create the 'period_spent' column
-    df_results_stock['period_spent'] = df_results_stock.groupby(['location', 'product'])['solutionvalue'].diff().shift(
-        -1)
+    df_results_stock['period_spent'] = df_results_stock.groupby(['location', 'product'])['solutionvalue'].diff().shift(-1)
 
     df_results_stock.loc[df_results_stock['period'] == 0, 'period_spent'] = \
         df_results_stock['initialstock'] - df_results_stock['solutionvalue']
@@ -200,11 +217,6 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
 
     # Remove negative 'period_spent'
     df_results_stock['period_spent'] = np.maximum(0, df_results_stock['period_spent'])
-
-    # # Remove rows with zero total stock
-    # df_results_stock = df_results_stock[(df_results_stock['solutionvalue'] +
-    #                                      df_results_stock['initialstock'] +
-    #                                      abs(df_results_stock['period_spent'])) > threshold]
 
     # Execute the query to retrieve demands
     cursor.execute(f"""
@@ -229,7 +241,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     cursor.execute(f"""
         SELECT *
         FROM results_sale
-        WHERE configid = {configid} AND runid = {runid} AND period IN {period}
+        WHERE configid = {configid} AND datasetid = {datasetid} AND runid = {runid} AND period IN {period}
         ORDER BY CAST(period AS int) {sorting}
     """)
     sale_rows = cursor.fetchall()
