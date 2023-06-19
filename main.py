@@ -127,7 +127,7 @@ def run_resource_mapper():
                 'transport_type',
                 'solutionvalue',
                 'leadtime',
-                'residual',
+                # 'residual',
                 'leftover',
                 'spend'
             ]
