@@ -24,6 +24,7 @@ def run_resource_mapper():
     mapped_production = pd.DataFrame()
     mapped_movement = pd.DataFrame()
     mapped_procurement = pd.DataFrame()
+    mapped_capacity = pd.DataFrame()
     mapped_sales = pd.DataFrame()
 
     # Iterate over rows in sorted sales dataframe
@@ -93,7 +94,7 @@ def run_resource_mapper():
                 'solutionvalue',
                 'initialstock',
                 'period_spent',
-                # 'residual',
+                'residual',
                 'ps_leftover',
                 'spend',
                 'store'
@@ -127,7 +128,7 @@ def run_resource_mapper():
                 'transport_type',
                 'solutionvalue',
                 'leadtime',
-                # 'residual',
+                'residual',
                 'leftover',
                 'spend'
             ]
@@ -158,3 +159,4 @@ def run_resource_mapper():
 
 if __name__ == '__main__':
     run_resource_mapper()
+

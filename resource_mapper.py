@@ -24,7 +24,7 @@ def map_resources(order, order_id, label,
             (df_production, df_stock, df_movement, df_procurement,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
-    # create empty dataframes for mapping and add columns
+    # create empty dataframes for mapping
     t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'store': []})
     mapped_stock = pd.DataFrame(columns=df_stock.columns)
     mapped_stock = pd.concat([mapped_stock, t])
@@ -42,10 +42,11 @@ def map_resources(order, order_id, label,
 
     def update_mapped_residual(order, mapped_resources):
 
-        # unpack the mapped resources
+        # unpack the resources
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
-        # find the latest row with the desired 'keys' and update its residual
+        # find the latest row with the desired 'keys' and update it's residual
+        # also update the residual in the input tables
         if order['type'] == 'stock':
             last_index = mapped_stock.loc[mapped_stock['keys'] == order['keys']].index[-1]
             mapped_stock.loc[last_index, 'residual'] = order['residual']
@@ -62,7 +63,7 @@ def map_resources(order, order_id, label,
             last_index = mapped_procurement.loc[mapped_procurement['keys'] == order['keys']].index[-1]
             mapped_procurement.loc[last_index, 'residual'] = order['residual']
 
-        # pack the mapped resources
+        # pack the resources
         mapped_resources = mapped_stock, mapped_production, mapped_movement, mapped_procurement
 
         return mapped_resources
@@ -232,7 +233,7 @@ def map_resources(order, order_id, label,
             product_procurement['spend'] = product_procurement['leftover']
             product_procurement['leftover'] = 0
 
-        # update the residual
+        # update residual
         mapped_resources = update_mapped_residual(order, mapped_resources)
 
         # unpack the resources
@@ -294,7 +295,7 @@ def map_resources(order, order_id, label,
             # check stock
             df_product_stock = df_stock[
                 (df_stock['product'] == order['product']) &
-                # if the order is stock, check previous period, otherwise check current stock leftovers
+                # if the order is stock, check prev period, otherwise check current stock leftovers
                 (np.where(df_stock['type'] == order['type'],
                           df_stock['period'] == order['period'] - 1,
                           df_stock['period'] == order['period'])) &
@@ -425,10 +426,6 @@ def map_resources(order, order_id, label,
 
                                         # set the name of the Series to the index-label of the row
                                         product_bom_item.name = df_bomlist.index[j]
-                                        # TODO: resource mapping
-                                        # get capacity
-                                        capacity = df_production_capacity[df_production_capacity['bomnum'] == product_bom_item['bomnum']]
-                                        capacity['spend'] = product_bom_item['solutionvalue'] * capacity['coefficient']
 
                                         # capture the recursive results
                                         recursive_results_bom.append(
