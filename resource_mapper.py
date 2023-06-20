@@ -37,7 +37,7 @@ def map_resources(order, order_id, label,
     mapped_procurement = pd.DataFrame(columns=df_procurement.columns)
     mapped_procurement = pd.concat([mapped_procurement, t])
     mapped_capacity = pd.DataFrame(columns=df_capacity.columns)
-    t = pd.DataFrame({'order_id': [], 'label': [], 'spend': [], 'total_cost': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'prod_quantity': [], 'spend': [], 'total_cost': []})
     mapped_capacity = pd.concat([mapped_capacity, t])
 
     # pack the resources
@@ -272,27 +272,28 @@ def map_resources(order, order_id, label,
         df_product_bom['order_id'] = product_production['order_id']
         df_product_bom['label'] = product_production['label']
         df_product_bom['loc_from'], df_product_bom['loc_to'] = df_product_bom['location'], df_product_bom['location']
-        df_product_bom['solutionvalue'] = -df_product_bom['input_output'] * product_production['spend']
-        df_product_bom['residual'] = df_product_bom['solutionvalue']
+        df_product_bom['prod_quantity'] = -df_product_bom['input_output'] * product_production['spend']
+        df_product_bom['residual'] = df_product_bom['prod_quantity']
         df_product_bom['leftover'] = Decimal('0')
-        df_product_bom['spend'] = df_product_bom['solutionvalue']
+        df_product_bom['spend'] = df_product_bom['prod_quantity']
         df_product_bom['type'] = 'bom'
 
         return df_product_bom
 
-    def get_capacity(product_bom_item, df_capacity):
+    def get_capacity(product_production, df_capacity):
         # get the capacity
-        product_capacity = df_capacity[
-            (df_capacity['bomnum'] == product_bom_item['bomnum']) &
-            (df_capacity['period'] == product_bom_item['period'])
+        df_product_capacity = df_capacity[
+            (df_capacity['bomnum'] == product_production['bomnum']) &
+            (df_capacity['period'] == product_production['period'])
             ].copy()
-        return product_capacity
+        return df_product_capacity
 
-    def map_capacity(order_id, label, df_product_capacity, product_bom_item, mapped_capacity, df_capacity):
+    def map_capacity(order_id, label, df_product_capacity, product_production, mapped_capacity, df_capacity):
         # map the capacity
         df_product_capacity['order_id'] = order_id
         df_product_capacity['label'] = label
-        df_product_capacity['spend'] = product_bom_item['solutionvalue'] * df_product_capacity['coefficient']
+        df_product_capacity['prod_quantity'] = product_production['spend']
+        df_product_capacity['spend'] = df_product_capacity['prod_quantity'] * df_product_capacity['var_production_cons']
         df_product_capacity['leftover'] -= df_product_capacity['spend']
 
         # map the capacity
@@ -444,6 +445,19 @@ def map_resources(order, order_id, label,
                                 order, product_production,
                                 resources, mapped_resources
                             )
+
+                            # get capacities
+                            df_product_capacity = get_capacity(product_production, df_capacity)
+
+                            # map capacities
+                            mapped_capacity, df_capacity = map_capacity(
+                                order_id, label,
+                                df_product_capacity,
+                                product_production,
+                                mapped_capacity,
+                                df_capacity
+                            )
+
                             # map BOM
                             df_bomlist = get_bom_orders(product_production, df_bom)
                             # if the product has inputs
@@ -456,18 +470,6 @@ def map_resources(order, order_id, label,
 
                                     # set the name of the Series to the index-label of the row
                                     product_bom_item.name = df_bomlist.index[j]
-
-                                    # get capacities
-                                    df_product_capacity = get_capacity(product_bom_item, df_capacity)
-
-                                    # map capacities
-                                    mapped_capacity, df_capacity = map_capacity(
-                                        order_id, label,
-                                        df_product_capacity,
-                                        product_bom_item,
-                                        mapped_capacity,
-                                        df_capacity
-                                    )
 
                                     # capture the recursive results
                                     recursive_results_bom.append(

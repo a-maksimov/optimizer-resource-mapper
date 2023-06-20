@@ -75,7 +75,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Cast integer datatypes
     df_capacity['period'] = df_capacity['period'].astype(int)
     # Drop unnecessary columns
-    capacity_cols = ['location', 'product', 'bomnum', 'resource', 'capacity', 'coefficient', 'period', 'cost']
+    capacity_cols = ['location', 'product', 'bomnum', 'resource', 'capacity', 'var_production_cons', 'coefficient', 'period', 'cost']
     df_capacity = df_capacity[capacity_cols].copy()
     # Drop duplicates
     df_capacity = df_capacity.drop_duplicates()

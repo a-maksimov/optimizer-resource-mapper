@@ -6,16 +6,16 @@ from data_loader import data_loader
 
 
 def calculate_cost(mapped_resources):
-    """ Calculates costs of the mapped results """
+    """ Calculates the costs of the mapped results """
     # unpack the mapped resources
     mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity = mapped_resources
 
     # calculate total costs
     mapped_stock['total_cost'] = -mapped_stock['cost'] * mapped_stock['store']
     mapped_movement['total_cost'] = -mapped_movement['cost'] * mapped_movement['spend']
-    mapped_procurement['total_cost'] = -mapped_procurement['cost'] * mapped_procurement['spend'] * mapped_procurement[
-        'coefficient']
-    mapped_capacity['total_cost'] = -mapped_capacity['cost'] * mapped_capacity['spend']
+    mapped_procurement['total_cost'] = -mapped_procurement['cost'] * mapped_procurement['spend'] * \
+                                       mapped_procurement['coefficient']
+    mapped_capacity['total_cost'] = -mapped_capacity['cost'] * mapped_capacity['spend'] * mapped_capacity['coefficient']
     mapped_sales['total_cost'] = 0
 
     cost_stocks = mapped_stock.groupby('label')['total_cost'].sum()
@@ -23,7 +23,7 @@ def calculate_cost(mapped_resources):
     cost_procurement = mapped_procurement.groupby('label')['total_cost'].sum()
     cost_capacity = mapped_capacity.groupby('label')['total_cost'].sum()
 
-    # if the order is in the mapped table, add up its cost
+    # if the order is in the mapped table, add up its total cost
     for order in pd.unique(mapped_sales['keys']):
         order_cost = 0
         if order in cost_stocks.index:
@@ -34,13 +34,23 @@ def calculate_cost(mapped_resources):
             order_cost += cost_procurement.loc[order]
         if order in cost_capacity:
             order_cost += cost_capacity.loc[order]
-        # add up the cost
+        # store the order cost
         mapped_sales.loc[mapped_sales['keys'] == order, 'total_cost'] = order_cost
+
+    return mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity
+
+
+def post_process_sales(mapped_sales):
+    """ Calculates additional columns for the mapped sales """
 
     # calculate the unit cost
     mapped_sales['unit_cost'] = mapped_sales['total_cost'] / mapped_sales['solutionvalue']
+    # calculate the unsatisfied demand
+    mapped_sales['unsatisfied_demand'] = mapped_sales['quantity'] - mapped_sales['solutionvalue']
+    # calculate the lost profit
+    mapped_sales['unsatisfied_demand'] = mapped_sales['unsatisfied_demand'] * mapped_sales['price']
 
-    return mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity
+    return mapped_sales
 
 
 def run_resource_mapper():
@@ -110,10 +120,11 @@ def run_resource_mapper():
     # pack the resources
     mapped_resources = mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity
 
-    # calculate costs
+    # calculate the costs
     mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity = calculate_cost(mapped_resources)
 
-    mapped_sales['unsatisfied_demand'] = mapped_sales['quantity'] - mapped_sales['solutionvalue']
+    # calculate the additional columns for mapped sales
+    mapped_sales = post_process_sales(mapped_sales)
 
     # save the results
     filepath = f'results/resource_mapped_results_{config.time_direction}_{config.priority}.xlsx'
@@ -214,6 +225,8 @@ def run_resource_mapper():
                 'bomnum',
                 'resource',
                 'capacity',
+                'prod_quantity',
+                'var_production_cons',
                 'period',
                 'leftover',
                 'spend',
