@@ -93,7 +93,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Cast integers
     df_movement['duration'] = df_movement['duration'].astype(int)
     # Drop unnecessary columns
-    movement_cols = ['loc_from', 'loc_to', 'product', 'period', 'transport_type', 'duration', 'cost']
+    movement_cols = ['loc_from', 'loc_to', 'product', 'period', 'transport_type', 'duration', 'cost', 'coefficient']
     df_movement = df_movement[movement_cols].copy()
     # Drop duplicates
     df_movement = df_movement.drop_duplicates()
@@ -177,7 +177,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Save the results in a DataFrame
     df_stock = pd.DataFrame(stock_rows, columns=[desc[0] for desc in cursor.description])
     # Drop unnecessary columns
-    initial_stock_cols = ['location', 'product', 'initialstock', 'period', 'cost']
+    initial_stock_cols = ['location', 'product', 'initialstock', 'period', 'cost', 'coefficient']
     df_stock = df_stock[initial_stock_cols].copy()
     # Drop duplicates
     df_stock = df_stock.drop_duplicates()
@@ -259,7 +259,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_sale = pd.merge(df_results_sale, df_demand, on=['location', 'product', 'client', 'period'])
 
     # Calculate the product of solution_value and price
-    df_results_sale['total_price'] = df_results_sale['solutionvalue'] * df_results_sale['price']
+    df_results_sale['revenue'] = df_results_sale['solutionvalue'] * df_results_sale['price']
 
     # Execute the query to retrieve BOMs
     cursor.execute(f"""
@@ -284,49 +284,45 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
 
     # Parameters
     # Sorting parameters
-    if time_direction == 'backward' and priority == 'total_price':
+    if time_direction == 'backward' and priority == 'revenue':
         parameters_list = [False, False]
     else:
         parameters_list = [True, False]
-    df_results_sale = df_results_sale.sort_values(['period', 'total_price'], ascending=parameters_list).reset_index(
-        drop=True)
+    df_results_sale = df_results_sale.sort_values(['period', 'revenue'], ascending=parameters_list).reset_index(drop=True)
 
     # Whether to ignore lead time
     if not lead_time:
         df_results_production['leadtime'] = 0
         df_results_movement['leadtime'] = 0
 
-    # Save input data to file
-    filepath = f'input/resource_mapper_input_{config.time_direction}_{config.priority}.xlsx'
-    with pd.ExcelWriter(filepath) as writer:
-        df_results_sale.to_excel(writer, sheet_name='sales')
-        df_results_stock.to_excel(writer, sheet_name='stock', index=False)
-        df_results_production.to_excel(writer, sheet_name='production', index=False)
-        df_results_movement.to_excel(writer, sheet_name='movement', index=False)
-        df_results_procurement.to_excel(writer, sheet_name='procurement', index=False)
-
-    # Assign 'loc_from' and 'lock_to' and 'type' for each input table for consistency
+    # Assign 'loc_from' and 'lock_to' and 'operation_type' for each input table
     df_results_stock = df_results_stock.assign(
         loc_from=df_results_stock['location'],
         loc_to=df_results_stock['location'],
-        type='stock',
+        operation_type='stock',
     )
+
     df_results_sale = df_results_sale.assign(
         loc_from=df_results_sale['location'],
         loc_to=df_results_sale['location'],
-        type='sale'
+        operation_type='sale'
     )
+
     df_results_production = df_results_production.assign(
         loc_from=df_results_production['location'],
         loc_to=df_results_production['location'],
-        type='production'
+        operation_type='production'
     )
+
     df_results_procurement = df_results_procurement.assign(
         loc_from=df_results_procurement['location'],
         loc_to=df_results_procurement['location'],
-        type='procurement'
+        operation_type='procurement'
     )
-    df_results_movement = df_results_movement.assign(type='movement')
+
+    df_results_movement = df_results_movement.assign(operation_type='movement')
+
+    df_capacity = df_capacity.assign(operation_type='resource')
 
     # Create unique keys
     df_results_sale['keys'] = df_results_sale.apply(
@@ -353,4 +349,4 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_results_procurement['leftover'] = df_results_procurement['solutionvalue']
     df_capacity['leftover'] = df_capacity['capacity']
 
-    return df_results_sale, df_results_stock, df_results_production, df_results_movement, df_results_procurement, df_bom, df_capacity
+    return df_results_sale, df_results_stock, df_results_production, df_results_movement, df_results_procurement, df_bom, df_capacity, df_demand

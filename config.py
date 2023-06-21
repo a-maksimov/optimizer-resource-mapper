@@ -7,7 +7,7 @@ lead_time = True  # False makes lead times 0. Use with duration switched off in 
 period = 0, 1, 2
 threshold = Decimal('0.10')
 time_direction = 'backward'
-priority = 'total_price'
+priority = 'revenue'
 map_priority = {
     'stock': 1,
     'production': 0,

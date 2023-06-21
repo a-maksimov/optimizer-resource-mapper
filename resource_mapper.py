@@ -26,10 +26,10 @@ def map_resources(order, order_id, label,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
     # create empty dataframes for mapping and add columns
-    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'store': [], 'total_cost': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'oder_operation_volume': [], 'store': []})
     mapped_stock = pd.DataFrame(columns=df_stock.columns)
     mapped_stock = pd.concat([mapped_stock, t])
-    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'total_cost': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'oder_operation_volume': []})
     mapped_production = pd.DataFrame(columns=df_production.columns)
     mapped_production = pd.concat([mapped_production, t])
     mapped_movement = pd.DataFrame(columns=df_movement.columns)
@@ -37,7 +37,7 @@ def map_resources(order, order_id, label,
     mapped_procurement = pd.DataFrame(columns=df_procurement.columns)
     mapped_procurement = pd.concat([mapped_procurement, t])
     mapped_capacity = pd.DataFrame(columns=df_capacity.columns)
-    t = pd.DataFrame({'order_id': [], 'label': [], 'prod_quantity': [], 'spend': [], 'total_cost': []})
+    t = pd.DataFrame({'order_id': [], 'label': [], 'prod_quantity': [], 'oder_operation_volume': []})
     mapped_capacity = pd.concat([mapped_capacity, t])
 
     # pack the resources
@@ -50,19 +50,19 @@ def map_resources(order, order_id, label,
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
         # find the latest row with the desired 'keys' and update its residual
-        if order['type'] == 'stock':
+        if order['operation_type'] == 'stock':
             last_index = mapped_stock.loc[mapped_stock['keys'] == order['keys']].index[-1]
             mapped_stock.loc[last_index, 'residual'] = order['residual']
 
-        elif order['type'] == 'production':
+        elif order['operation_type'] == 'production':
             last_index = mapped_production.loc[mapped_production['keys'] == order['keys']].index[-1]
             mapped_production.loc[last_index, 'residual'] = order['residual']
 
-        elif order['type'] == 'movement':
+        elif order['operation_type'] == 'movement':
             last_index = mapped_movement.loc[mapped_movement['keys'] == order['keys']].index[-1]
             mapped_movement.loc[last_index, 'residual'] = order['residual']
 
-        elif order['type'] == 'procurement':
+        elif order['operation_type'] == 'procurement':
             last_index = mapped_procurement.loc[mapped_procurement['keys'] == order['keys']].index[-1]
             mapped_procurement.loc[last_index, 'residual'] = order['residual']
 
@@ -77,7 +77,7 @@ def map_resources(order, order_id, label,
         product_stock['order_id'] = order_id
         product_stock['label'] = label
 
-        if order['type'] == product_stock['type']:
+        if order['operation_type'] == product_stock['operation_type']:
             order['residual'] -= product_stock['sv_leftover']
             if order['residual'] < threshold:
                 product_stock['store'] = product_stock['sv_leftover'] + order['residual']
@@ -89,11 +89,11 @@ def map_resources(order, order_id, label,
         else:
             order['residual'] -= product_stock['ps_leftover']
             if order['residual'] < threshold:
-                product_stock['spend'] = product_stock['ps_leftover'] + order['residual']
+                product_stock['oder_operation_volume'] = product_stock['ps_leftover'] + order['residual']
                 product_stock['ps_leftover'] = -order['residual']
                 order['residual'] = 0
             else:
-                product_stock['spend'] = product_stock['ps_leftover']
+                product_stock['oder_operation_volume'] = product_stock['ps_leftover']
                 product_stock['ps_leftover'] = 0
 
         # update the residual
@@ -103,10 +103,10 @@ def map_resources(order, order_id, label,
         df_stock, df_production, df_movement, df_procurement = resources
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
-        if order['type'] == product_stock['type']:
+        if order['operation_type'] == product_stock['operation_type']:
             spend = product_stock['store']
         else:
-            spend = product_stock['spend']
+            spend = product_stock['oder_operation_volume']
 
         if product_stock['er_leftover'] > threshold:
             # map extra resource
@@ -152,11 +152,11 @@ def map_resources(order, order_id, label,
 
         # calculate the order residual and resource spend and leftover
         if order['residual'] < threshold:
-            product_production['spend'] = product_production['leftover'] + order['residual']
+            product_production['oder_operation_volume'] = product_production['leftover'] + order['residual']
             product_production['leftover'] = -order['residual']
             order['residual'] = 0
         else:
-            product_production['spend'] = product_production['leftover']
+            product_production['oder_operation_volume'] = product_production['leftover']
             product_production['leftover'] = 0
 
         # update the residual
@@ -189,11 +189,11 @@ def map_resources(order, order_id, label,
 
         # calculate the order residual and resource spend and leftover
         if order['residual'] < threshold:
-            product_movement['spend'] = product_movement['leftover'] + order['residual']
+            product_movement['oder_operation_volume'] = product_movement['leftover'] + order['residual']
             product_movement['leftover'] = -order['residual']
             order['residual'] = 0
         else:
-            product_movement['spend'] = product_movement['leftover']
+            product_movement['oder_operation_volume'] = product_movement['leftover']
             product_movement['leftover'] = 0
 
         # update the residual
@@ -204,7 +204,7 @@ def map_resources(order, order_id, label,
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
         # update resource residual
-        product_movement['residual'] = product_movement['spend']
+        product_movement['residual'] = product_movement['oder_operation_volume']
 
         # append to a mapped dataframe
         mapped_movement.loc[len(mapped_movement.index)] = product_movement
@@ -229,15 +229,12 @@ def map_resources(order, order_id, label,
 
         # calculate the order residual and resource spend and leftover
         if order['residual'] < threshold:
-            product_procurement['spend'] = product_procurement['leftover'] + order['residual']
+            product_procurement['oder_operation_volume'] = product_procurement['leftover'] + order['residual']
             product_procurement['leftover'] = -order['residual']
             order['residual'] = 0
         else:
-            product_procurement['spend'] = product_procurement['leftover']
+            product_procurement['oder_operation_volume'] = product_procurement['leftover']
             product_procurement['leftover'] = 0
-
-        # calculate cost
-        product_procurement['total_cost'] = product_procurement['spend'] * -product_procurement['cost']
 
         # update the residual
         mapped_resources = update_mapped_residual(order, mapped_resources)
@@ -247,7 +244,7 @@ def map_resources(order, order_id, label,
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
         # update resource residual
-        product_procurement['residual'] = product_procurement['spend']
+        product_procurement['residual'] = product_procurement['oder_operation_volume']
 
         # append to a mapped dataframe
         mapped_procurement.loc[len(mapped_procurement.index)] = product_procurement
@@ -272,11 +269,11 @@ def map_resources(order, order_id, label,
         df_product_bom['order_id'] = product_production['order_id']
         df_product_bom['label'] = product_production['label']
         df_product_bom['loc_from'], df_product_bom['loc_to'] = df_product_bom['location'], df_product_bom['location']
-        df_product_bom['prod_quantity'] = -df_product_bom['input_output'] * product_production['spend']
+        df_product_bom['prod_quantity'] = -df_product_bom['input_output'] * product_production['oder_operation_volume']
         df_product_bom['residual'] = df_product_bom['prod_quantity']
         df_product_bom['leftover'] = Decimal('0')
-        df_product_bom['spend'] = df_product_bom['prod_quantity']
-        df_product_bom['type'] = 'bom'
+        df_product_bom['oder_operation_volume'] = df_product_bom['prod_quantity']
+        df_product_bom['operation_type'] = 'bom'
 
         return df_product_bom
 
@@ -292,9 +289,9 @@ def map_resources(order, order_id, label,
         # map the capacity
         df_product_capacity['order_id'] = order_id
         df_product_capacity['label'] = label
-        df_product_capacity['prod_quantity'] = product_production['spend']
-        df_product_capacity['spend'] = df_product_capacity['prod_quantity'] * df_product_capacity['var_production_cons']
-        df_product_capacity['leftover'] -= df_product_capacity['spend']
+        df_product_capacity['prod_quantity'] = product_production['oder_operation_volume']
+        df_product_capacity['resource_consumption_operation'] = df_product_capacity['prod_quantity'] * df_product_capacity['var_production_cons']
+        df_product_capacity['leftover'] -= df_product_capacity['resource_consumption_operation']
 
         # map the capacity
         for i in range(len(df_product_capacity)):
@@ -328,17 +325,17 @@ def map_resources(order, order_id, label,
             df_product_stock = df_stock[
                 (df_stock['product'] == order['product']) &
                 # if the order is stock, check previous period, otherwise check current stock leftovers
-                (np.where(df_stock['type'] == order['type'],
+                (np.where(df_stock['operation_type'] == order['operation_type'],
                           df_stock['period'] == order['period'] - 1,
                           df_stock['period'] == order['period'])) &
                 (df_stock['loc_to'] == order['loc_from']) &
                 # if the order is stock, check previous period solutionvalue leftover,
                 # otherwise check current period_spend leftover
-                (np.where(df_stock['type'] == order['type'],
+                (np.where(df_stock['operation_type'] == order['operation_type'],
                           abs(df_stock['sv_leftover']) > threshold,
                           abs(df_stock['ps_leftover']) > threshold)) &
                 # suppress selection from self leftovers
-                (~df_stock.index.isin([order.name]) | (df_stock['type'] != order['type']))
+                (~df_stock.index.isin([order.name]) | (df_stock['operation_type'] != order['operation_type']))
                 ].copy()
             if len(df_product_stock) > 0:
                 df_list.append(df_product_stock)
@@ -350,7 +347,7 @@ def map_resources(order, order_id, label,
                 (df_production['loc_to'] == order['loc_from']) &
                 (abs(df_production['leftover']) > threshold) &
                 # suppress selection from self
-                (~df_production.index.isin([order.name]) | (df_production['type'] != order['type']))
+                (~df_production.index.isin([order.name]) | (df_production['operation_type'] != order['operation_type']))
                 ].copy()
             if len(df_product_production) > 0:
                 df_list.append(df_product_production)
@@ -362,7 +359,7 @@ def map_resources(order, order_id, label,
                 (df_movement['loc_to'] == order['loc_from']) &
                 (abs(df_movement['leftover']) > threshold) &
                 # suppress selection from self leftovers
-                (~df_movement.index.isin([order.name]) | (df_movement['type'] != order['type']))
+                (~df_movement.index.isin([order.name]) | (df_movement['operation_type'] != order['operation_type']))
                 ].copy()
             if len(df_product_movement) > 0:
                 df_list.append(df_product_movement)
@@ -374,21 +371,21 @@ def map_resources(order, order_id, label,
                 (df_procurement['loc_to'] == order['loc_from']) &
                 (abs(df_procurement['leftover']) > threshold) &
                 # suppress selection from self leftovers
-                (~df_procurement.index.isin([order.name]) | (df_procurement['type'] != order['type']))
+                (~df_procurement.index.isin([order.name]) | (df_procurement['operation_type'] != order['operation_type']))
                 ].copy()
             if len(df_product_procurement):
                 df_list.append(df_product_procurement)
 
             recursive_results = []
             # iterate over sorted list of branches
-            df_list = sorted(df_list, key=lambda d: map_priority[d.iloc[0]['type']])
+            df_list = sorted(df_list, key=lambda d: map_priority[d.iloc[0]['operation_type']])
             for df in df_list:
                 # break the loop if the order is fulfilled
                 if abs(order['residual']) < threshold:
                     break
 
                 else:
-                    if df.iloc[0]['type'] == 'stock':
+                    if df.iloc[0]['operation_type'] == 'stock':
                         # iterate over found stocks
                         recursive_results_stock = []
                         for i in range(len(df)):
@@ -423,7 +420,7 @@ def map_resources(order, order_id, label,
                         # get the recursive result from the stock branch
                         recursive_results.append(recursive_results_stock[-1])
 
-                    elif df.iloc[0]['type'] == 'production':
+                    elif df.iloc[0]['operation_type'] == 'production':
                         # iterate over found productions
                         recursive_results_production = []
                         for i in range(len(df)):
@@ -497,7 +494,7 @@ def map_resources(order, order_id, label,
                         # get the recursive result from the production branch
                         recursive_results.append(recursive_results_production[-1])
 
-                    elif df.iloc[0]['type'] == 'movement':
+                    elif df.iloc[0]['operation_type'] == 'movement':
                         # iterate over found movements
                         recursive_results_movement = []
                         for i in range(len(df)):
