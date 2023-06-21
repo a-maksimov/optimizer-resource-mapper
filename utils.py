@@ -154,4 +154,4 @@ def export_summary_table(summary_table):
     filepath = f'results/marking_demand.xlsx'
 
     with pd.ExcelWriter(filepath) as writer:
-        summary_table.to_excel(writer, sheet_name='output_stock', index=False)
+        summary_table.to_excel(writer, sheet_name='summary_table', index=False)

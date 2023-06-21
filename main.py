@@ -15,9 +15,11 @@ def process_mapped_resources(mapped_resources, df_demand):
     # drop unnecessary columns
     mapped_sales = mapped_sales.drop(['loc_to', 'loc_from', 'operation_type', 'residual', 'keys'], axis=1)
 
-    summary_table = pd.merge(df_demand, mapped_sales,
-                             on=['location', 'product', 'client', 'period', 'price', 'quantity']).sort_values(
-        'order_id')
+    summary_table = pd.merge(
+        df_demand,
+        mapped_sales,
+        on=['location', 'product', 'client', 'period', 'price', 'quantity']
+    ).sort_values('order_id')
 
     summary_table['config_id'] = config.configid
     summary_table['dataset_id'] = config.datasetid
@@ -45,17 +47,28 @@ def process_mapped_resources(mapped_resources, df_demand):
     # calculate margin of the unit price
     summary_table['margin_per_unit'] = summary_table['demand_price'] - summary_table['cost_per_unit_order']
 
+    # drop spend rows from mapped stock
+    mapped_stock = mapped_stock.dropna(subset=['order_operation_volume'])
+
+    # merge mapped production with mapped capacities
+    mapped_production = mapped_production.merge(
+        mapped_capacity[['location', 'product', 'bomnum', 'period', 'order_id', 'prod_id', 'resource', 'capacity',
+                         'var_production_cons', 'resource_consumption_operation']],
+        on=['location', 'product', 'bomnum', 'period', 'order_id', 'prod_id']
+    )
+
     # drop unnecessary columns
-    mapped_stock = mapped_stock.drop(['loc_to', 'loc_from', 'residual', 'period_spent', 'extra_res', 'is_leftover',
-                                      'sv_leftover', 'ps_leftover', 'er_leftover', 'keys', 'label'], axis=1)
-    mapped_production = mapped_production.drop(['loc_to', 'loc_from', 'residual', 'leftover', 'keys', 'label'], axis=1)
+    mapped_stock = mapped_stock.drop(['loc_to', 'loc_from', 'residual', 'spend', 'period_spent', 'extra_res',
+                                      'is_leftover', 'sv_leftover', 'ps_leftover', 'er_leftover', 'keys', 'label'],
+                                     axis=1)
+    mapped_production = mapped_production.drop(['prod_id', 'loc_to', 'loc_from', 'residual', 'leftover', 'keys',
+                                                'label'], axis=1)
     mapped_movement = mapped_movement.drop(['residual', 'leftover', 'keys', 'label'], axis=1)
     mapped_procurement = mapped_procurement.drop(['loc_to', 'loc_from', 'residual', 'leftover', 'keys', 'label'],
                                                  axis=1)
-    mapped_capacity = mapped_capacity.drop(['label', 'leftover'], axis=1)
 
     # pack the mapped resources
-    mapped_resources = [mapped_stock, mapped_production, mapped_movement, mapped_procurement, mapped_capacity]
+    mapped_resources = [mapped_stock, mapped_production, mapped_movement, mapped_procurement]
 
     # create a list of merged tables
     summary_tables = [summary_table.merge(mapped_resource, on=['order_id']) for mapped_resource in mapped_resources]
@@ -78,35 +91,41 @@ def calculate_cost(mapped_resources):
     """ Calculates the costs of the mapped results """
 
     # unpack the mapped resources
-    mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity = mapped_resources
-
-    # fill stock nan spend and store with 0
-    mapped_stock = mapped_stock.fillna(0)
+    mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_production = mapped_resources
 
     # calculate total costs
-    mapped_stock['cost_of_allocated'] = -mapped_stock['cost'] * mapped_stock['store'] * mapped_stock['coefficient']
-    mapped_movement['cost_of_allocated'] = -mapped_movement['cost'] * mapped_movement['oder_operation_volume'] * \
+    mapped_stock['cost_of_allocated'] = -mapped_stock['cost'] * \
+                                        mapped_stock['order_operation_volume'] * \
+                                        mapped_stock['coefficient']
+
+    mapped_movement['cost_of_allocated'] = -mapped_movement['cost'] * \
+                                           mapped_movement['order_operation_volume'] * \
                                            mapped_procurement['coefficient']
-    mapped_procurement['cost_of_allocated'] = -mapped_procurement['cost'] * mapped_procurement[
-        'oder_operation_volume'] * mapped_procurement['coefficient']
-    mapped_capacity['cost_of_allocated'] = -mapped_capacity['cost'] * mapped_capacity['oder_operation_volume'] * \
-                                           mapped_capacity['coefficient']
+
+    mapped_procurement['cost_of_allocated'] = -mapped_procurement['cost'] * \
+                                              mapped_procurement['order_operation_volume'] * \
+                                              mapped_procurement['coefficient']
+
+    mapped_production['cost_of_allocated'] = -mapped_production['cost'] * \
+                                             mapped_production['order_operation_volume'] * \
+                                             mapped_production['coefficient']
+
     mapped_sales['cost_of_demand'] = 0
 
     # calculate total cost for each order in the operation
     cost_stocks = mapped_stock.groupby('label')['cost_of_allocated'].sum()
     cost_movement = mapped_movement.groupby('label')['cost_of_allocated'].sum()
     cost_procurement = mapped_procurement.groupby('label')['cost_of_allocated'].sum()
-    cost_capacity = mapped_capacity.groupby('label')['cost_of_allocated'].sum()
+    cost_production = mapped_production.groupby('label')['cost_of_allocated'].sum()
 
-    cost_list = [cost_stocks, cost_movement, cost_procurement, cost_capacity]
+    cost_list = [cost_stocks, cost_movement, cost_procurement, cost_production]
 
     # calculate the cost of demand for this order if the order is in the mapped table
     for order in pd.unique(mapped_sales['keys']):
         cost_of_demand = sum(cost.loc[order] for cost in cost_list if order in cost.index)
         mapped_sales.loc[mapped_sales['keys'] == order, 'cost_of_demand'] = cost_of_demand
 
-    return mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity
+    return mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_production
 
 
 def run_resource_mapper():
@@ -169,15 +188,17 @@ def run_resource_mapper():
         mapped_sales = pd.concat([mapped_sales, order])
 
     # pack the resources
-    mapped_resources = mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity
+    mapped_resources = mapped_sales, mapped_stock, mapped_production, mapped_movement, mapped_procurement
 
     # calculate the costs
-    mapped_sales, mapped_stock, mapped_movement, mapped_procurement, mapped_capacity = calculate_cost(mapped_resources)
+    mapped_sales, mapped_stock, mapped_production, mapped_movement, mapped_procurement = calculate_cost(
+        mapped_resources
+    )
 
     # pack the resources
     mapped_resources = mapped_sales, mapped_stock, mapped_production, mapped_movement, mapped_procurement, mapped_capacity
 
-    # calculate the summary_table
+    # calculate the summary table
     summary_table = process_mapped_resources(mapped_resources, df_demand)
 
     # export the summary table

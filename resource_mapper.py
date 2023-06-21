@@ -26,19 +26,18 @@ def map_resources(order, order_id, label,
              mapped_production, mapped_stock, mapped_movement, mapped_procurement)
     """
     # create empty dataframes for mapping and add columns
-    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'oder_operation_volume': [], 'store': []})
-    mapped_stock = pd.DataFrame(columns=df_stock.columns)
-    mapped_stock = pd.concat([mapped_stock, t])
-    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'oder_operation_volume': []})
-    mapped_production = pd.DataFrame(columns=df_production.columns)
-    mapped_production = pd.concat([mapped_production, t])
-    mapped_movement = pd.DataFrame(columns=df_movement.columns)
-    mapped_movement = pd.concat([mapped_movement, t])
-    mapped_procurement = pd.DataFrame(columns=df_procurement.columns)
-    mapped_procurement = pd.concat([mapped_procurement, t])
-    mapped_capacity = pd.DataFrame(columns=df_capacity.columns)
-    t = pd.DataFrame({'order_id': [], 'label': [], 'prod_quantity': [], 'oder_operation_volume': []})
-    mapped_capacity = pd.concat([mapped_capacity, t])
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'spend': [], 'order_operation_volume': []})
+    mapped_stock = pd.concat([pd.DataFrame(columns=df_stock.columns), t])
+
+    t = pd.DataFrame({'order_id': [], 'prod_id': [], 'label': [], 'residual': [], 'order_operation_volume': []})
+    mapped_production = pd.concat([pd.DataFrame(columns=df_production.columns), t])
+
+    t = pd.DataFrame({'order_id': [], 'label': [], 'residual': [], 'order_operation_volume': []})
+    mapped_movement = pd.concat([pd.DataFrame(columns=df_movement.columns), t])
+    mapped_procurement = pd.concat([pd.DataFrame(columns=df_procurement.columns), t])
+
+    t = pd.DataFrame({'order_id': [], 'prod_id': [], 'label': [], 'resource_consumption_operation': []})
+    mapped_capacity = pd.concat([pd.DataFrame(columns=df_capacity.columns), t])
 
     # pack the resources
     resources = df_stock, df_production, df_movement, df_procurement
@@ -80,20 +79,20 @@ def map_resources(order, order_id, label,
         if order['operation_type'] == product_stock['operation_type']:
             order['residual'] -= product_stock['sv_leftover']
             if order['residual'] < threshold:
-                product_stock['store'] = product_stock['sv_leftover'] + order['residual']
+                product_stock['order_operation_volume'] = product_stock['sv_leftover'] + order['residual']
                 product_stock['sv_leftover'] = -order['residual']
                 order['residual'] = 0
             else:
-                product_stock['store'] = product_stock['sv_leftover']
+                product_stock['order_operation_volume'] = product_stock['sv_leftover']
                 product_stock['sv_leftover'] = 0
         else:
             order['residual'] -= product_stock['ps_leftover']
             if order['residual'] < threshold:
-                product_stock['oder_operation_volume'] = product_stock['ps_leftover'] + order['residual']
+                product_stock['spend'] = product_stock['ps_leftover'] + order['residual']
                 product_stock['ps_leftover'] = -order['residual']
                 order['residual'] = 0
             else:
-                product_stock['oder_operation_volume'] = product_stock['ps_leftover']
+                product_stock['spend'] = product_stock['ps_leftover']
                 product_stock['ps_leftover'] = 0
 
         # update the residual
@@ -104,9 +103,9 @@ def map_resources(order, order_id, label,
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
         if order['operation_type'] == product_stock['operation_type']:
-            spend = product_stock['store']
+            spend = product_stock['order_operation_volume']
         else:
-            spend = product_stock['oder_operation_volume']
+            spend = product_stock['spend']
 
         if product_stock['er_leftover'] > threshold:
             # map extra resource
@@ -152,11 +151,11 @@ def map_resources(order, order_id, label,
 
         # calculate the order residual and resource spend and leftover
         if order['residual'] < threshold:
-            product_production['oder_operation_volume'] = product_production['leftover'] + order['residual']
+            product_production['order_operation_volume'] = product_production['leftover'] + order['residual']
             product_production['leftover'] = -order['residual']
             order['residual'] = 0
         else:
-            product_production['oder_operation_volume'] = product_production['leftover']
+            product_production['order_operation_volume'] = product_production['leftover']
             product_production['leftover'] = 0
 
         # update the residual
@@ -189,11 +188,11 @@ def map_resources(order, order_id, label,
 
         # calculate the order residual and resource spend and leftover
         if order['residual'] < threshold:
-            product_movement['oder_operation_volume'] = product_movement['leftover'] + order['residual']
+            product_movement['order_operation_volume'] = product_movement['leftover'] + order['residual']
             product_movement['leftover'] = -order['residual']
             order['residual'] = 0
         else:
-            product_movement['oder_operation_volume'] = product_movement['leftover']
+            product_movement['order_operation_volume'] = product_movement['leftover']
             product_movement['leftover'] = 0
 
         # update the residual
@@ -204,7 +203,7 @@ def map_resources(order, order_id, label,
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
         # update resource residual
-        product_movement['residual'] = product_movement['oder_operation_volume']
+        product_movement['residual'] = product_movement['order_operation_volume']
 
         # append to a mapped dataframe
         mapped_movement.loc[len(mapped_movement.index)] = product_movement
@@ -229,11 +228,11 @@ def map_resources(order, order_id, label,
 
         # calculate the order residual and resource spend and leftover
         if order['residual'] < threshold:
-            product_procurement['oder_operation_volume'] = product_procurement['leftover'] + order['residual']
+            product_procurement['order_operation_volume'] = product_procurement['leftover'] + order['residual']
             product_procurement['leftover'] = -order['residual']
             order['residual'] = 0
         else:
-            product_procurement['oder_operation_volume'] = product_procurement['leftover']
+            product_procurement['order_operation_volume'] = product_procurement['leftover']
             product_procurement['leftover'] = 0
 
         # update the residual
@@ -244,7 +243,7 @@ def map_resources(order, order_id, label,
         mapped_stock, mapped_production, mapped_movement, mapped_procurement = mapped_resources
 
         # update resource residual
-        product_procurement['residual'] = product_procurement['oder_operation_volume']
+        product_procurement['residual'] = product_procurement['order_operation_volume']
 
         # append to a mapped dataframe
         mapped_procurement.loc[len(mapped_procurement.index)] = product_procurement
@@ -269,10 +268,10 @@ def map_resources(order, order_id, label,
         df_product_bom['order_id'] = product_production['order_id']
         df_product_bom['label'] = product_production['label']
         df_product_bom['loc_from'], df_product_bom['loc_to'] = df_product_bom['location'], df_product_bom['location']
-        df_product_bom['prod_quantity'] = -df_product_bom['input_output'] * product_production['oder_operation_volume']
+        df_product_bom['prod_quantity'] = -df_product_bom['input_output'] * product_production['order_operation_volume']
         df_product_bom['residual'] = df_product_bom['prod_quantity']
         df_product_bom['leftover'] = Decimal('0')
-        df_product_bom['oder_operation_volume'] = df_product_bom['prod_quantity']
+        df_product_bom['order_operation_volume'] = df_product_bom['prod_quantity']
         df_product_bom['operation_type'] = 'bom'
 
         return df_product_bom
@@ -289,8 +288,9 @@ def map_resources(order, order_id, label,
         # map the capacity
         df_product_capacity['order_id'] = order_id
         df_product_capacity['label'] = label
-        df_product_capacity['prod_quantity'] = product_production['oder_operation_volume']
-        df_product_capacity['resource_consumption_operation'] = df_product_capacity['prod_quantity'] * df_product_capacity['var_production_cons']
+        df_product_capacity['prod_id'] = product_production['prod_id']
+        df_product_capacity['resource_consumption_operation'] = product_production['order_operation_volume'] * \
+                                                                df_product_capacity['var_production_cons']
         df_product_capacity['leftover'] -= df_product_capacity['resource_consumption_operation']
 
         # map the capacity
@@ -371,7 +371,8 @@ def map_resources(order, order_id, label,
                 (df_procurement['loc_to'] == order['loc_from']) &
                 (abs(df_procurement['leftover']) > threshold) &
                 # suppress selection from self leftovers
-                (~df_procurement.index.isin([order.name]) | (df_procurement['operation_type'] != order['operation_type']))
+                (~df_procurement.index.isin([order.name]) | (
+                            df_procurement['operation_type'] != order['operation_type']))
                 ].copy()
             if len(df_product_procurement):
                 df_list.append(df_product_procurement)
@@ -432,6 +433,9 @@ def map_resources(order, order_id, label,
 
                             # set the name of the Series to the label of the row
                             product_production.name = df.index[i]
+
+                            # set the unique id for mapped production and mapped capacity
+                            product_production['prod_id'] = len(mapped_production)
 
                             # pack the resources
                             resources = df_stock, df_production, df_movement, df_procurement

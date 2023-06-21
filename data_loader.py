@@ -31,8 +31,9 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     df_production['period'] = df_production['period'].astype(int)
     df_production['duration'] = df_production['duration'].astype(int)
     # Drop unnecessary columns
-    production_cols = ['location', 'product', 'bomnum', 'period', 'duration']
+    production_cols = ['location', 'product', 'bomnum', 'period', 'duration', 'cost', 'coefficient']
     df_production = df_production[production_cols].copy()
+
     # Drop duplicates
     df_production = df_production.drop_duplicates()
 
@@ -50,6 +51,8 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Filter out numbers close to zero
     df_results_production = df_results_production[
         abs(df_results_production['solutionvalue']) > config.threshold]
+    # Cast integer datatypes
+    df_results_production['period'] = df_results_production['period'].astype(int)
     # Drop unnecessary columns
     results_production_cols = ['location', 'product', 'bomnum', 'period', 'solutionvalue']
     df_results_production = df_results_production[results_production_cols].copy()
@@ -75,7 +78,7 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     # Cast integer datatypes
     df_capacity['period'] = df_capacity['period'].astype(int)
     # Drop unnecessary columns
-    capacity_cols = ['location', 'product', 'bomnum', 'resource', 'capacity', 'var_production_cons', 'coefficient', 'period', 'cost']
+    capacity_cols = ['location', 'product', 'bomnum', 'period', 'resource', 'capacity', 'var_production_cons']
     df_capacity = df_capacity[capacity_cols].copy()
     # Drop duplicates
     df_capacity = df_capacity.drop_duplicates()
@@ -321,8 +324,6 @@ def data_loader(configid, datasetid, runid, period, time_direction, priority, le
     )
 
     df_results_movement = df_results_movement.assign(operation_type='movement')
-
-    df_capacity = df_capacity.assign(operation_type='resource')
 
     # Create unique keys
     df_results_sale['keys'] = df_results_sale.apply(
